@@ -143,7 +143,7 @@ unishare/
 
 PHẦN 1 — HỢP ĐỒNG CHUNG (CHỐT TRƯỚC KHI CODE)
 
-Đây là phần quan trọng nhất. Phúc và Khôi phải thống nhất toàn bộ phần này trước khi viết bất kỳ dòng code nào. Sau khi chốt, không ai được đổi tên field, tên component, tên hàm, tên type mà không báo người còn lại.
+Đây là phần quan trọng nhất.Phải thống nhất toàn bộ phần này trước khi viết bất kỳ dòng code nào. Sau khi chốt, không ai được đổi tên field, tên component, tên hàm, tên type mà không báo người còn lại.
 
 1.1. Tên collection Firestore
 
@@ -698,15 +698,10 @@ Impact thấp, Effort thấp
 - Tìm kiếm, lọc việc (mục 11, 12)
 - Đăng bán đồ cũ (mục 13)
 
-
 PHẦN 7 — CAM KẾT
 
 - P1 sẽ hoàn thành 100% trước 15/12/2026.
 - P2 sẽ làm nếu còn thời gian, không ảnh hưởng P1.
 - P3 không làm, không bàn thêm.
-- Nếu giảng viên yêu cầu thêm tính năng ngoài danh sách này, cả nhóm họp lại và cập nhật file này trước khi code.
+- Nếu giảng viên yêu cầu thêm tính năng ngoài danh sách này, nhóm họp lại và cập nhật file này trước khi code.
 - Không thêm thư viện mới ngoài stack ở Phần 0 mà không báo người còn lại.
-
-Ký tên:
-- Hoàng Phúc: ___________
-- Minh Khôi: ___________
