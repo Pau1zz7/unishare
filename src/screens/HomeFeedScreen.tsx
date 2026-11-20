@@ -292,13 +292,13 @@ export default function HomeFeedScreen({ navigation }: any) {
 
   const handleTaskPress = (task: Task) => {
     if (navigation?.navigate) {
-      navigation.navigate('TaskDetail', { taskId: task.taskId });
+      navigation.navigate('TaskDetail', { taskId: task.taskId, task });
     }
   };
 
   const handleProductPress = (product: Product) => {
     if (navigation?.navigate) {
-      navigation.navigate('ProductDetail', { productId: product.productId });
+      navigation.navigate('ProductDetail', { productId: product.productId, product });
     }
   };
 
