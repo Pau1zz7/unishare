@@ -12,7 +12,7 @@ export default function LoginScreen({ navigation }: any) {
   const handleLogin = async () => {
     const result = await login(email, password);
     if (result.success) {
-      Alert.alert("Thành công", "Đăng nhập thành công!");
+      navigation.navigate('HomeFeed');
     } else {
       Alert.alert("Lỗi đăng nhập", result.error);
     }
