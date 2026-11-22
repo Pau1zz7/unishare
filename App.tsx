@@ -11,6 +11,9 @@ import TaskDetailScreen from './src/screens/TaskDetailScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CreateTaskScreen from './src/screens/CreateTaskScreen';
 import CreateProductScreen from './src/screens/CreateProductScreen';
+import RouteMatchingScreen from './src/screens/RouteMatchingScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import ReviewRatingScreen from './src/screens/ReviewRatingScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -18,7 +21,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator initialRouteName="HomeFeed" screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
@@ -27,6 +30,9 @@ export default function App() {
           <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
           <Stack.Screen name="CreateTask" component={CreateTaskScreen} />
           <Stack.Screen name="CreateProduct" component={CreateProductScreen} />
+          <Stack.Screen name="RouteMatching" component={RouteMatchingScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="ReviewRating" component={ReviewRatingScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
