@@ -11,6 +11,11 @@ export interface User {
   totalReviews: number;
   createdAt: number;
   updatedAt?: number;
+  university?: string;
+  studentIdVerified?: boolean;
+  completedTasksCount?: number;
+  postedTasksCount?: number;
+  activeProductsCount?: number;
 }
 
 export interface RegisterInput {
@@ -99,5 +104,59 @@ export interface CreateTaskInput {
   deadline?: string;
   imageUrls?: string[];
 }
+
+export interface MapMarkerItem {
+  id: string;
+  type: 'task' | 'product' | 'origin' | 'destination';
+  title: string;
+  bountyOrPrice?: number;
+  isFree?: boolean;
+  category?: string;
+  requesterOrSellerName?: string;
+  trustScore?: number;
+  address: string;
+  deviationMeters?: number; // Độ lệch so với tuyến đường (VD: 80m, 150m)
+  latitude: number;
+  longitude: number;
+  rawTask?: Task;
+  rawProduct?: Product;
+}
+
+export interface RouteInfo {
+  originName: string;
+  originCoords: { latitude: number; longitude: number };
+  destinationName: string;
+  destinationCoords: { latitude: number; longitude: number };
+  totalDistanceKm: number;
+  estimatedDurationMins: number;
+}
+
+export interface Review {
+  reviewId: string;
+  reviewerId: string;
+  reviewerName: string;
+  reviewerAvatar?: string | null;
+  targetUserId: string;
+  rating: number; // 1 to 5
+  comment: string;
+  tags?: string[];
+  relatedType: 'task' | 'product' | 'tutor';
+  relatedTitle?: string;
+  relatedId?: string;
+  createdAt: number;
+}
+
+export interface CreateReviewInput {
+  targetUserId: string;
+  targetUserName?: string;
+  rating: number;
+  comment: string;
+  tags: string[];
+  relatedType: 'task' | 'product' | 'tutor';
+  relatedTitle: string;
+  relatedId: string;
+}
+
+
 
 
