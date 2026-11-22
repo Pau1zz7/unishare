@@ -326,6 +326,12 @@ export default function HomeFeedScreen({ navigation }: any) {
 
         <View style={styles.topActions}>
           <TouchableOpacity
+            style={[styles.iconBtn, { marginRight: 8 }]}
+            onPress={() => navigation?.navigate('RouteMatching')}
+          >
+            <Feather name="map" size={18} color={colors.primary[600]} />
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.iconBtn}
             onPress={() => navigation?.navigate('Notifications')}
           >
