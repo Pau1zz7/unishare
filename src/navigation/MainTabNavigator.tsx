@@ -2,14 +2,19 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
+import { useAuthStore } from '../store/useAuthStore';
 import HomeFeedScreen from '../screens/HomeFeedScreen';
 import RouteMatchingScreen from '../screens/RouteMatchingScreen';
 import ConversationListScreen from '../screens/ConversationListScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import AdminScreen from '../screens/AdminScreen';
 
 const Tab = createBottomTabNavigator();
 
 export default function MainTabNavigator() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -29,6 +34,8 @@ export default function MainTabNavigator() {
             iconName = 'message-square';
           } else if (route.name === 'Profile') {
             iconName = 'user';
+          } else if (route.name === 'Admin') {
+            iconName = 'shield';
           }
 
           return <Feather name={iconName} size={size} color={color} />;
@@ -55,6 +62,13 @@ export default function MainTabNavigator() {
         component={ProfileScreen}
         options={{ tabBarLabel: 'Hồ sơ' }}
       />
+      {isAdmin && (
+        <Tab.Screen
+          name="Admin"
+          component={AdminScreen}
+          options={{ tabBarLabel: 'Quản trị' }}
+        />
+      )}
     </Tab.Navigator>
   );
 }
