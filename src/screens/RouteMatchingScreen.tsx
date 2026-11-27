@@ -19,7 +19,6 @@ import { colors, typography, spacing, borderRadius, shadows } from '../theme/tok
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Mock Route Info
 const MOCK_ROUTE: RouteInfo = {
   originName: 'ĐH Công Nghệ Thông Tin (UIT)',
   originCoords: { latitude: 10.87, longitude: 106.8 },
@@ -29,7 +28,6 @@ const MOCK_ROUTE: RouteInfo = {
   estimatedDurationMins: 7,
 };
 
-// Mock Markers dọc tuyến đường Làng Đại Học
 const MOCK_MARKERS: MapMarkerItem[] = [
   {
     id: 'origin',
@@ -56,7 +54,7 @@ const MOCK_MARKERS: MapMarkerItem[] = [
     requesterOrSellerName: 'Nguyễn Văn An',
     trustScore: 4.9,
     address: 'Cổng 1 KTX Khu B ĐHQG',
-    deviationMeters: 80, // Lệch 80m so với tuyến đường chính
+    deviationMeters: 80,
     latitude: 10.881,
     longitude: 106.781,
   },
@@ -69,7 +67,7 @@ const MOCK_MARKERS: MapMarkerItem[] = [
     requesterOrSellerName: 'Trần Thị Mai',
     trustScore: 5.0,
     address: 'Quán Photo Cổng ĐH KHTN',
-    deviationMeters: 120, // Lệch 120m
+    deviationMeters: 120,
     latitude: 10.873,
     longitude: 106.792,
   },
@@ -82,7 +80,7 @@ const MOCK_MARKERS: MapMarkerItem[] = [
     requesterOrSellerName: 'Lê Hoàng Long',
     trustScore: 4.8,
     address: 'Quán Cơm Sinh Viên - Ngã 3 621',
-    deviationMeters: 190, // Lệch 190m
+    deviationMeters: 190,
     latitude: 10.876,
     longitude: 106.795,
   },
@@ -123,7 +121,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
   const [filterMode, setFilterMode] = useState<FilterMode>('matched');
   const [sheetExpanded, setSheetExpanded] = useState(false);
 
-  // Filter markers based on tab
   const displayedMarkers = MOCK_MARKERS.filter((m) => {
     if (m.type === 'origin' || m.type === 'destination') return true;
     if (filterMode === 'matched') {
@@ -158,7 +155,7 @@ export default function RouteMatchingScreen({ navigation }: any) {
   const handleQuickAction = (marker: MapMarkerItem) => {
     if (marker.type === 'task') {
       Alert.alert(
-        'Nhận việc tiện đường! ⚡',
+        'Nhận việc tiện đường! ',
         `Bạn đã đăng ký nhận việc "${marker.title}" (Lệch ${marker.deviationMeters}m). Hãy trao đổi ngay với bạn ${marker.requesterOrSellerName}!`,
         [
           {
@@ -182,7 +179,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* 1. TOP FLOATING ROUTE PLANNER BAR */}
       <View style={styles.routeHeaderBox}>
         <View style={styles.routeTopRow}>
           <TouchableOpacity
@@ -194,7 +190,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </TouchableOpacity>
 
           <View style={styles.routeInputsCol}>
-            {/* Origin */}
             <View style={styles.routeInputItem}>
               <View style={[styles.dotCircle, { backgroundColor: '#16A34A' }]} />
               <Text style={styles.routeLocationText} numberOfLines={1}>
@@ -204,7 +199,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
 
             <View style={styles.routeDivider} />
 
-            {/* Destination */}
             <View style={styles.routeInputItem}>
               <View style={[styles.dotCircle, { backgroundColor: '#DC2626' }]} />
               <Text style={styles.routeLocationText} numberOfLines={1}>
@@ -221,7 +215,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* Route Summary Pill */}
         <View style={styles.routeStatsRow}>
           <View style={styles.routeStatBadge}>
             <Feather name="navigation" size={12} color={colors.primary[600]} />
@@ -235,7 +228,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Quick Filter Switchers */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChipsRow}>
           <TouchableOpacity
             style={[styles.filterChip, filterMode === 'matched' && styles.filterChipActive]}
@@ -269,9 +261,7 @@ export default function RouteMatchingScreen({ navigation }: any) {
         </ScrollView>
       </View>
 
-      {/* 2. MAP CANVAS AREA (Interactive Map View Simulation) */}
       <View style={styles.mapArea}>
-        {/* Background Grid Map pattern */}
         <View style={styles.mapBackground}>
           <View style={styles.mapGridRow} />
           <View style={styles.mapGridRow} />
@@ -287,19 +277,14 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Simulated Polyline Route Path */}
         <View style={styles.polylineContainer}>
-          {/* Main Route Line */}
           <View style={styles.polylineRoadMain} />
           <View style={styles.polylineRoadCore} />
         </View>
 
-        {/* Deviation dashed lines connecting tasks to main route */}
         <View style={styles.deviationGuide1} />
         <View style={styles.deviationGuide2} />
 
-        {/* Dynamic Markers on Map Canvas */}
-        {/* Origin: UIT */}
         <View style={[styles.markerAbsolute, { top: '68%', left: '16%' }]}>
           <MapMarker
             item={MOCK_MARKERS[0]}
@@ -308,7 +293,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           />
         </View>
 
-        {/* Destination: KTX Khu B */}
         <View style={[styles.markerAbsolute, { top: '18%', right: '18%' }]}>
           <MapMarker
             item={MOCK_MARKERS[1]}
@@ -317,7 +301,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           />
         </View>
 
-        {/* Task 1: Shopee KTX B */}
         {displayedMarkers.some((m) => m.id === 'task-1') && (
           <View style={[styles.markerAbsolute, { top: '27%', right: '28%' }]}>
             <MapMarker
@@ -328,7 +311,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Task 2: Photo KHTN */}
         {displayedMarkers.some((m) => m.id === 'task-2') && (
           <View style={[styles.markerAbsolute, { top: '50%', left: '40%' }]}>
             <MapMarker
@@ -339,7 +321,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Task 3: Cơm gà ngã 3 621 */}
         {displayedMarkers.some((m) => m.id === 'task-3') && (
           <View style={[styles.markerAbsolute, { top: '38%', left: '52%' }]}>
             <MapMarker
@@ -350,7 +331,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Product 1: Sách */}
         {displayedMarkers.some((m) => m.id === 'prod-1') && (
           <View style={[styles.markerAbsolute, { top: '22%', right: '45%' }]}>
             <MapMarker
@@ -361,7 +341,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* 3. POPUP MARKER CARD (CALLOUT OVERLAY) */}
         {selectedMarker && selectedMarker.type !== 'origin' && selectedMarker.type !== 'destination' && (
           <View style={styles.floatingPopupAnchor}>
             <MarkerPopupCard
@@ -373,7 +352,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Floating Map Controls */}
         <View style={styles.mapControlsCol}>
           <TouchableOpacity
             style={styles.mapControlBtn}
@@ -390,9 +368,7 @@ export default function RouteMatchingScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* 4. DRAGGABLE / EXPANDABLE BOTTOM SHEET */}
       <View style={[styles.bottomSheet, sheetExpanded && styles.bottomSheetExpanded]}>
-        {/* Drag handle */}
         <TouchableOpacity
           style={styles.sheetHandleWrap}
           activeOpacity={0.7}
@@ -401,7 +377,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           <View style={styles.sheetHandleBar} />
         </TouchableOpacity>
 
-        {/* Sheet Header */}
         <View style={styles.sheetHeader}>
           <View>
             <View style={styles.sheetTitleRow}>
@@ -426,7 +401,6 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* Matched Tasks List */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           style={styles.sheetScrollList}
@@ -619,7 +593,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
   },
   mapBackground: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#E2E8F0',
   },
   mapGridRow: {
@@ -697,7 +671,7 @@ const styles = StyleSheet.create({
     color: '#15803D',
   },
   polylineContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   polylineRoadMain: {
     position: 'absolute',
