@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -8,46 +8,22 @@ import {
   Image,
   Alert,
   Share,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Task } from '../types';
+import { useAuthStore } from '../store/useAuthStore';
+import { useTaskDetail } from '../features/tasks/hooks/useTasks';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
 
-// Fallback Mock Task nếu không có route params
-const DEFAULT_TASK: Task = {
-  taskId: 't1',
-  title: 'Nhận hộ kiện hàng Shopee tại Cổng 1 KTX Khu B',
-  description:
-    'Mình đang bận học trên giảng đường ĐH CNTT không về kịp trước 17h, nhờ bạn nào lấy hộ kiện quần áo (khoảng 1kg) mang về sảnh Tòa B3 giúp mình. Hàng đã thanh toán trước trên Shopee, chỉ cần đọc mã vận đơn là lấy được ngay.',
-  requesterId: 'u1',
-  requesterName: 'Nguyễn Văn An',
-  requesterTrustScore: 4.9,
-  bounty: 25000,
-  paymentMethod: 'transfer',
-  category: 'delivery',
-  pickupLocation: {
-    latitude: 10.88,
-    longitude: 106.78,
-    address: 'Cổng 1 KTX Khu B ĐHQG TP.HCM (Quầy bưu tá Shopee)',
-  },
-  deliveryLocation: {
-    latitude: 10.881,
-    longitude: 106.782,
-    address: 'Sảnh Tòa B3, KTX Khu B ĐHQG TP.HCM',
-  },
-  status: 'open',
-  distanceKm: 0.8,
-  estimatedTime: 20,
-  imageUrls: [
-    'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=500&q=80',
-  ],
-  createdAt: Date.now() - 25 * 60 * 1000,
-};
-
 export default function TaskDetailScreen({ route, navigation }: any) {
-  const task: Task = route?.params?.task || DEFAULT_TASK;
-  const [isAccepted, setIsAccepted] = useState(task.status !== 'open');
+  const initialTask: Task | undefined = route?.params?.task;
+  const taskId: string | undefined = route?.params?.taskId || initialTask?.taskId;
+
+  const user = useAuthStore((state) => state.user);
+  const { task, loading, accepting, error, acceptTask } = useTaskDetail(taskId, initialTask);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
@@ -63,16 +39,73 @@ export default function TaskDetailScreen({ route, navigation }: any) {
   };
 
   const handleShare = async () => {
+    if (!task) return;
     try {
       await Share.share({
         message: `[UniShare Việc Vặt] ${task.title} - Thù lao: ${formatCurrency(task.bounty)}. Nhận việc ngay trên UniShare!`,
       });
-    } catch (error) {
-      console.log(error);
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const executeAccept = async () => {
+    if (!task || !user?.uid) return;
+    try {
+      await acceptTask(
+        user.uid,
+        user.displayName || user.email || 'Sinh viên UniShare'
+      );
+      Alert.alert(
+        'Nhận việc thành công! 🎉',
+        'Bạn đã nhận công việc này. Hãy liên hệ với người nhờ để xác nhận thời gian nhận hàng nhé!',
+        [{ text: 'Đóng' }]
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Không thể nhận việc',
+        err?.message || 'Đã có lỗi xảy ra khi nhận việc. Vui lòng thử lại.'
+      );
     }
   };
 
   const handleAcceptTask = () => {
+    if (!task) return;
+
+    if (!user?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên để nhận việc.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+
+    if (task.requesterId === user.uid) {
+      Alert.alert('Thông báo', 'Bạn không thể tự nhận việc do chính mình đăng.');
+      return;
+    }
+
+    if (task.status !== 'open') {
+      Alert.alert('Thông báo', 'Công việc này đã được nhận hoặc không còn mở.');
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' &&
+        window.confirm(
+          `Bạn chắc chắn muốn nhận việc "${task.title}" với thù lao ${formatCurrency(task.bounty)}?`
+        );
+      if (confirmed) {
+        executeAccept();
+      }
+      return;
+    }
+
     Alert.alert(
       'Xác nhận nhận việc',
       `Bạn chắc chắn muốn nhận việc "${task.title}" với thù lao ${formatCurrency(task.bounty)}?`,
@@ -81,29 +114,106 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         {
           text: 'Đồng ý nhận',
           style: 'default',
-          onPress: () => {
-            setIsAccepted(true);
-            Alert.alert(
-              'Nhận việc thành công! 🎉',
-              'Bạn đã nhận công việc này. Hãy nhắn tin cho người nhờ để xác nhận thời gian nhận hàng nhé!',
-              [
-                {
-                  text: 'Nhắn tin ngay',
-                  onPress: () =>
-                    navigation?.navigate('ChatRoom', {
-                      partnerName: task.requesterName,
-                      taskTitle: task.title,
-                      taskId: task.taskId,
-                    }),
-                },
-                { text: 'Đóng' },
-              ]
-            );
-          },
+          onPress: executeAccept,
         },
       ]
     );
   };
+
+  if (loading && !task) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={22} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.navTitle}>Chi tiết việc vặt</Text>
+          <View style={styles.navBtnPlaceholder} />
+        </View>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={colors.primary[600]} />
+          <Text style={styles.centerStateText}>Đang tải thông tin công việc...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!task) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={22} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.navTitle}>Chi tiết việc vặt</Text>
+          <View style={styles.navBtnPlaceholder} />
+        </View>
+        <View style={styles.centerState}>
+          <Feather name="alert-circle" size={48} color={colors.neutral.disabled} />
+          <Text style={styles.centerStateTitle}>Không tìm thấy công việc</Text>
+          <Text style={styles.centerStateText}>
+            {error || 'Bài đăng này có thể đã bị xóa hoặc không tồn tại.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.backHomeBtn}
+            onPress={() => navigation?.goBack()}
+          >
+            <Text style={styles.backHomeBtnText}>Quay lại bảng tin</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const isOpen = task.status === 'open';
+  const isOwnTask = !!user?.uid && task.requesterId === user.uid;
+  const isMyAcceptedTask = !!user?.uid && task.workerId === user.uid;
+
+  const statusMeta = (() => {
+    switch (task.status) {
+      case 'open':
+        return {
+          label: 'Đang chờ nhận việc',
+          badgeStyle: styles.statusOpenBadge,
+          dotColor: colors.semantic.success.DEFAULT,
+          textColor: colors.semantic.success.text,
+        };
+      case 'matched':
+        return {
+          label: isMyAcceptedTask ? 'Bạn đang thực hiện' : 'Đã có người nhận',
+          badgeStyle: styles.statusMatchedBadge,
+          dotColor: colors.semantic.warning.DEFAULT,
+          textColor: colors.semantic.warning.text,
+        };
+      case 'completed':
+        return {
+          label: 'Đã hoàn thành',
+          badgeStyle: styles.statusOpenBadge,
+          dotColor: colors.semantic.success.DEFAULT,
+          textColor: colors.semantic.success.text,
+        };
+      default:
+        return {
+          label: 'Đã đóng / Hủy',
+          badgeStyle: styles.statusClosedBadge,
+          dotColor: colors.semantic.danger.DEFAULT,
+          textColor: colors.semantic.danger.text,
+        };
+    }
+  })();
+
+  const actionLabel = (() => {
+    if (accepting) return 'Đang xử lý...';
+    if (isOwnTask) return 'Bài đăng của bạn';
+    if (task.status === 'matched') {
+      return isMyAcceptedTask ? 'Bạn đã nhận việc này' : 'Đã có người nhận việc';
+    }
+    if (task.status === 'completed') return 'Công việc đã hoàn thành';
+    if (!isOpen) return 'Công việc không còn mở';
+    return 'Nhận việc này ngay';
+  })();
+
+  const isActionDisabled = !isOpen || isOwnTask || accepting;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -135,25 +245,10 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         {/* 2. STATUS & BOUNTY HERO CARD */}
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
-            <View
-              style={[
-                styles.statusBadge,
-                isAccepted ? styles.statusMatchedBadge : styles.statusOpenBadge,
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusDot,
-                  { backgroundColor: isAccepted ? colors.semantic.warning.DEFAULT : colors.semantic.success.DEFAULT },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.statusText,
-                  { color: isAccepted ? colors.semantic.warning.text : colors.semantic.success.text },
-                ]}
-              >
-                {isAccepted ? 'Đang thực hiện' : 'Đang chờ nhận việc'}
+            <View style={[styles.statusBadge, statusMeta.badgeStyle]}>
+              <View style={[styles.statusDot, { backgroundColor: statusMeta.dotColor }]} />
+              <Text style={[styles.statusText, { color: statusMeta.textColor }]}>
+                {statusMeta.label}
               </Text>
             </View>
 
@@ -164,6 +259,13 @@ export default function TaskDetailScreen({ route, navigation }: any) {
           </View>
 
           <Text style={styles.taskTitle}>{task.title}</Text>
+
+          {task.deadline ? (
+            <View style={styles.deadlineBanner}>
+              <Feather name="calendar" size={13} color={colors.primary[600]} />
+              <Text style={styles.deadlineBannerText}>Thời hạn: {task.deadline}</Text>
+            </View>
+          ) : null}
 
           {/* Bounty Big Tag */}
           <View style={styles.bountyBox}>
@@ -198,7 +300,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
               ) : (
                 <View style={styles.avatarFallback}>
                   <Text style={styles.avatarInitial}>
-                    {task.requesterName.charAt(0).toUpperCase()}
+                    {(task.requesterName || 'U').charAt(0).toUpperCase()}
                   </Text>
                 </View>
               )}
@@ -219,30 +321,36 @@ export default function TaskDetailScreen({ route, navigation }: any) {
                     {task.requesterTrustScore ? task.requesterTrustScore.toFixed(1) : '5.0'}
                   </Text>
                 </View>
-                <Text style={styles.campusTag}>• KTX Khu B ĐHQG</Text>
+                <Text style={styles.campusTag}>• Thành viên UniShare</Text>
               </View>
             </View>
 
             <TouchableOpacity
               style={styles.directChatBtn}
               onPress={() =>
-                navigation?.navigate('ChatRoom', {
-                  partnerName: task.requesterName,
-                  taskTitle: task.title,
-                })
+                Alert.alert('Thông báo', `Tính năng nhắn tin trực tiếp với ${task.requesterName} đang được kết nối.`)
               }
             >
               <Feather name="message-circle" size={18} color={colors.primary[600]} />
               <Text style={styles.directChatText}>Chat</Text>
             </TouchableOpacity>
           </View>
+
+          {task.status === 'matched' && task.workerName ? (
+            <View style={styles.workerInfoBox}>
+              <Feather name="user-check" size={15} color={colors.semantic.warning.text} />
+              <Text style={styles.workerInfoText}>
+                Người nhận việc: <Text style={{ fontWeight: '700' }}>{task.workerName}</Text>
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {/* 4. ROUTE INFO (Visual Stepper & MiniMap) */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeaderTitle}>Lộ trình di chuyển</Text>
-            {task.distanceKm && (
+            {task.distanceKm !== undefined && (
               <View style={styles.distanceChip}>
                 <Feather name="navigation" size={12} color={colors.primary[600]} />
                 <Text style={styles.distanceChipText}>{task.distanceKm} km</Text>
@@ -279,11 +387,13 @@ export default function TaskDetailScreen({ route, navigation }: any) {
             </View>
           </View>
 
-          {/* MiniMap Mockup Banner */}
+          {/* MiniMap Banner */}
           <View style={styles.miniMapPlaceholder}>
             <Feather name="map" size={24} color={colors.primary[500]} />
             <Text style={styles.miniMapText}>
-              Lộ trình khoảng ~{task.distanceKm || 0.8} km • Tiện đường đi lại
+              {task.distanceKm !== undefined
+                ? `Lộ trình khoảng ~${task.distanceKm} km • Tiện đường đi lại`
+                : 'Xem vị trí giao nhận trên bản đồ lộ trình'}
             </Text>
             <TouchableOpacity
               style={styles.viewRouteBtn}
@@ -298,7 +408,9 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         {/* 5. DESCRIPTION & NOTES */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionHeaderTitle}>Mô tả chi tiết</Text>
-          <Text style={styles.descriptionText}>{task.description}</Text>
+          <Text style={styles.descriptionText}>
+            {task.description || 'Người đăng không có ghi chú thêm.'}
+          </Text>
 
           {/* Attached Image if exists */}
           {task.imageUrls && task.imageUrls.length > 0 && (
@@ -332,10 +444,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={styles.chatBeforeBtn}
           onPress={() =>
-            navigation?.navigate('ChatRoom', {
-              partnerName: task.requesterName,
-              taskTitle: task.title,
-            })
+            Alert.alert('Thông báo', `Tính năng nhắn tin trực tiếp với ${task.requesterName} đang được kết nối.`)
           }
           activeOpacity={0.8}
         >
@@ -346,21 +455,23 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.primaryActionBtn,
-            isAccepted && styles.acceptedBtnDisabled,
+            isActionDisabled && styles.acceptedBtnDisabled,
           ]}
           onPress={handleAcceptTask}
-          disabled={isAccepted}
+          disabled={isActionDisabled}
           activeOpacity={0.85}
         >
-          <Feather
-            name={isAccepted ? 'check-circle' : 'zap'}
-            size={20}
-            color="#FFFFFF"
-            style={{ marginRight: 6 }}
-          />
-          <Text style={styles.primaryActionBtnText}>
-            {isAccepted ? 'Bạn đã nhận việc này' : 'Nhận việc này ngay'}
-          </Text>
+          {accepting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Feather
+              name={!isOpen || isOwnTask ? 'check-circle' : 'zap'}
+              size={20}
+              color="#FFFFFF"
+              style={{ marginRight: 6 }}
+            />
+          )}
+          <Text style={styles.primaryActionBtnText}>{actionLabel}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -390,6 +501,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.neutral.background,
   },
+  navBtnPlaceholder: {
+    width: 38,
+    height: 38,
+  },
   navTitle: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold,
@@ -398,6 +513,35 @@ const styles = StyleSheet.create({
   navRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+    gap: spacing[3],
+  },
+  centerStateTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.neutral.textPrimary,
+  },
+  centerStateText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+  },
+  backHomeBtn: {
+    marginTop: spacing[2],
+    backgroundColor: colors.primary[600],
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.lg,
+  },
+  backHomeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.sm,
   },
   scrollContent: {
     padding: spacing[4],
@@ -431,6 +575,9 @@ const styles = StyleSheet.create({
   statusMatchedBadge: {
     backgroundColor: colors.semantic.warning.light,
   },
+  statusClosedBadge: {
+    backgroundColor: colors.semantic.danger.light,
+  },
   statusDot: {
     width: 8,
     height: 8,
@@ -455,6 +602,17 @@ const styles = StyleSheet.create({
     color: colors.neutral.textPrimary,
     lineHeight: 26,
     marginVertical: spacing[2],
+  },
+  deadlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing[2],
+  },
+  deadlineBannerText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.primary[700],
+    fontWeight: typography.fontWeight.medium,
   },
   bountyBox: {
     flexDirection: 'row',
@@ -614,6 +772,19 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.bold,
     color: colors.primary[600],
+  },
+  workerInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing[3],
+    padding: spacing[2],
+    backgroundColor: colors.semantic.warning.light,
+    borderRadius: borderRadius.md,
+  },
+  workerInfoText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.semantic.warning.text,
   },
   stepperContainer: {
     marginVertical: spacing[1],

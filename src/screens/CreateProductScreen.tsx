@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { ProductCategory, ProductCondition } from '../types';
+import { useAuthStore } from '../store/useAuthStore';
+import { createProduct } from '../features/market/services/productService';
+import { chooseImageWithPrompt } from '../lib/image/imagePickerHelper';
+import {
+  CAMPUS_PRODUCT_PRESETS,
+  CampusPreset,
+  generateGeohash,
+} from '../lib/location/locationService';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
 
 const CATEGORIES: { id: ProductCategory; label: string; icon: any }[] = [
@@ -31,29 +40,36 @@ const CONDITIONS: { id: ProductCondition; label: string }[] = [
   { id: 'broken', label: 'Cần sửa chữa nhẹ' },
 ];
 
-const QUICK_CAMPUS_LOCATIONS = [
-  'KTX Khu B ĐHQG TP.HCM',
-  'KTX Khu A ĐHQG TP.HCM',
-  'Trường ĐH Công Nghệ Thông Tin (UIT)',
-  'Trường ĐH Khoa Học Tự Nhiên',
-];
-
-const SAMPLE_PHOTO = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&q=80';
-
 export default function CreateProductScreen({ navigation }: any) {
+  const user = useAuthStore((state) => state.user);
+
   const [isFree, setIsFree] = useState(false);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ProductCategory>('book');
   const [condition, setCondition] = useState<ProductCondition>('like-new');
   const [price, setPrice] = useState('35000');
-  const [locationAddress, setLocationAddress] = useState('KTX Khu B ĐHQG TP.HCM');
+  const [locationAddress, setLocationAddress] = useState(CAMPUS_PRODUCT_PRESETS[0].address);
+  const [locationCoords, setLocationCoords] = useState({
+    latitude: CAMPUS_PRODUCT_PRESETS[0].latitude,
+    longitude: CAMPUS_PRODUCT_PRESETS[0].longitude,
+  });
   const [description, setDescription] = useState('');
-  const [images, setImages] = useState<string[]>([SAMPLE_PHOTO]);
+  const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const locationGeohash = useMemo(
+    () => generateGeohash(locationCoords.latitude, locationCoords.longitude),
+    [locationCoords]
+  );
 
   const formatCurrency = (val: string) => {
     const num = parseInt(val.replace(/\D/g, ''), 10);
     return isNaN(num) ? '0' : new Intl.NumberFormat('vi-VN').format(num);
+  };
+
+  const handleSelectLocationPreset = (preset: CampusPreset) => {
+    setLocationAddress(preset.address);
+    setLocationCoords({ latitude: preset.latitude, longitude: preset.longitude });
   };
 
   const handleAddPhoto = () => {
@@ -61,44 +77,83 @@ export default function CreateProductScreen({ navigation }: any) {
       Alert.alert('Giới hạn', 'Bạn chỉ có thể thêm tối đa 4 ảnh cho 1 sản phẩm.');
       return;
     }
-    Alert.alert('Thêm ảnh sản phẩm', 'Chọn ảnh từ thư viện hoặc chụp ảnh món đồ cần thanh lý.', [
-      {
-        text: 'Thêm ảnh mẫu minh họa',
-        onPress: () => {
-          setImages((prev) => [
-            ...prev,
-            'https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=500&q=80',
-          ]);
-        },
-      },
-      { text: 'Hủy', style: 'cancel' },
-    ]);
+    chooseImageWithPrompt(
+      'Thêm ảnh sản phẩm',
+      'Chọn ảnh từ thư viện hoặc chụp ảnh món đồ cần thanh lý.',
+      (uri) => {
+        setImages((prev) => (prev.length < 4 ? [...prev, uri] : prev));
+      }
+    );
   };
 
   const handleRemovePhoto = (idx: number) => {
     setImages((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSubmit = () => {
+  const handleReset = () => {
+    setTitle('');
+    setPrice('0');
+    setDescription('');
+    setImages([]);
+    setLocationAddress(CAMPUS_PRODUCT_PRESETS[0].address);
+    setLocationCoords({
+      latitude: CAMPUS_PRODUCT_PRESETS[0].latitude,
+      longitude: CAMPUS_PRODUCT_PRESETS[0].longitude,
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (!user?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên trước khi đăng bán đồ.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+
     if (!title.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên món đồ muốn thanh lý.');
       return;
     }
-    if (!isFree) {
-      const priceNum = parseInt(price.replace(/\D/g, ''), 10);
-      if (isNaN(priceNum) || priceNum <= 0) {
-        Alert.alert('Giá không hợp lệ', 'Vui lòng nhập giá bán hoặc chọn hình thức "Tặng miễn phí 0đ".');
-        return;
-      }
+
+    const priceNum = isFree ? 0 : parseInt(price.replace(/\D/g, ''), 10);
+    if (!isFree && (isNaN(priceNum) || priceNum <= 0)) {
+      Alert.alert(
+        'Giá không hợp lệ',
+        'Vui lòng nhập giá bán hoặc chọn hình thức "Tặng miễn phí 0đ".'
+      );
+      return;
     }
+
     if (!locationAddress.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng chọn hoặc nhập địa điểm xem/lấy đồ.');
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await createProduct(
+        {
+          title: title.trim(),
+          description: description.trim(),
+          price: priceNum,
+          isFree,
+          category,
+          condition,
+          location: {
+            latitude: locationCoords.latitude,
+            longitude: locationCoords.longitude,
+            address: locationAddress.trim(),
+          },
+          imageUrls: images,
+        },
+        user
+      );
+
       Alert.alert(
         'Đăng bài thành công! 🎉',
         'Món đồ của bạn đã được đăng lên Chợ đồ cũ sinh viên UniShare.',
@@ -109,7 +164,14 @@ export default function CreateProductScreen({ navigation }: any) {
           },
         ]
       );
-    }, 600);
+    } catch (error: any) {
+      Alert.alert(
+        'Đăng bài thất bại',
+        error?.message || 'Không thể đăng sản phẩm lên hệ thống. Vui lòng thử lại.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -124,13 +186,7 @@ export default function CreateProductScreen({ navigation }: any) {
           <Feather name="x" size={24} color={colors.neutral.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Đăng bán / Cho tặng đồ cũ</Text>
-        <TouchableOpacity
-          onPress={() => {
-            setTitle('');
-            setPrice('0');
-            setDescription('');
-          }}
-        >
+        <TouchableOpacity onPress={handleReset} disabled={loading}>
           <Text style={styles.resetText}>Làm mới</Text>
         </TouchableOpacity>
       </View>
@@ -209,6 +265,7 @@ export default function CreateProductScreen({ navigation }: any) {
                 </TouchableOpacity>
               )}
             </ScrollView>
+            <Text style={styles.geoMetaText}>Ảnh sẽ được tải lên Firebase Storage khi đăng bài</Text>
           </View>
 
           {/* 4. PRODUCT TITLE */}
@@ -290,7 +347,9 @@ export default function CreateProductScreen({ navigation }: any) {
             {isFree ? (
               <View style={styles.freeBannerBox}>
                 <Feather name="gift" size={20} color="#15803D" />
-                <Text style={styles.freeBannerText}>Món đồ này sẽ được tặng miễn phí (0 đ) cho bạn sinh viên</Text>
+                <Text style={styles.freeBannerText}>
+                  Món đồ này sẽ được tặng miễn phí (0 đ) cho bạn sinh viên
+                </Text>
               </View>
             ) : (
               <>
@@ -337,16 +396,19 @@ export default function CreateProductScreen({ navigation }: any) {
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-              {QUICK_CAMPUS_LOCATIONS.map((loc, idx) => (
+              {CAMPUS_PRODUCT_PRESETS.map((loc) => (
                 <TouchableOpacity
-                  key={idx}
+                  key={loc.id}
                   style={styles.quickLocChip}
-                  onPress={() => setLocationAddress(loc)}
+                  onPress={() => handleSelectLocationPreset(loc)}
                 >
-                  <Text style={styles.quickLocText}>{loc}</Text>
+                  <Text style={styles.quickLocText}>{loc.address}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <Text style={styles.geoMetaText}>
+              Tọa độ: {locationCoords.latitude.toFixed(4)}, {locationCoords.longitude.toFixed(4)} • Geohash: {locationGeohash}
+            </Text>
           </View>
 
           {/* 9. DESCRIPTION */}
@@ -372,14 +434,22 @@ export default function CreateProductScreen({ navigation }: any) {
       {/* 10. SUBMIT BUTTON */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.submitBtn}
+          style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
           onPress={handleSubmit}
           disabled={loading}
           activeOpacity={0.85}
         >
-          <Feather name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Feather name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+          )}
           <Text style={styles.submitBtnText}>
-            {loading ? 'Đang đăng bài...' : isFree ? 'Đăng tặng đồ miễn phí ngay' : 'Đăng bán đồ ngay'}
+            {loading
+              ? 'Đang tải ảnh & đăng bài...'
+              : isFree
+              ? 'Đăng tặng đồ miễn phí ngay'
+              : 'Đăng bán đồ ngay'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -536,6 +606,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: typography.fontWeight.bold,
     color: colors.secondary[600],
+  },
+  geoMetaText: {
+    fontSize: 10,
+    color: colors.neutral.textMuted,
+    marginTop: 6,
   },
   inputWrap: {
     flexDirection: 'row',
@@ -706,6 +781,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary[500],
     paddingVertical: 14,
     borderRadius: borderRadius.xl,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
   },
   submitBtnText: {
     fontSize: typography.fontSize.sm,

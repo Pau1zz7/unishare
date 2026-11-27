@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,22 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { TaskCategory, TaskPaymentMethod } from '../types';
+import { useAuthStore } from '../store/useAuthStore';
+import { createTask } from '../features/tasks/services/taskService';
+import { chooseImageWithPrompt } from '../lib/image/imagePickerHelper';
+import {
+  CAMPUS_DELIVERY_PRESETS,
+  CAMPUS_PICKUP_PRESETS,
+  CampusPreset,
+  DEFAULT_CAMPUS_COORDS,
+  generateGeohash,
+} from '../lib/location/locationService';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
 
 const CATEGORIES: { id: TaskCategory; label: string; icon: any }[] = [
@@ -23,27 +35,20 @@ const CATEGORIES: { id: TaskCategory; label: string; icon: any }[] = [
   { id: 'other', label: 'Việc khác', icon: 'grid' },
 ];
 
-const QUICK_PICKUPS = [
-  'Cổng 1 KTX Khu B ĐHQG',
-  'Cổng KTX Khu A ĐHQG',
-  'Quán Photo Cổng ĐH KHTN',
-  'Căng tin ĐH CNTT (UIT)',
-];
-
-const QUICK_DELIVERIES = [
-  'Sảnh Tòa B3 KTX Khu B',
-  'Phòng 402 Tòa BA4 KTX Khu B',
-  'Sảnh Tòa A12 KTX Khu A',
-  'Nhà xe Trường ĐH Bách Khoa',
-];
-
 const QUICK_BOUNTIES = [20000, 30000, 50000, 80000];
 
 export default function CreateTaskScreen({ navigation }: any) {
+  const user = useAuthStore((state) => state.user);
+
   const [category, setCategory] = useState<TaskCategory>('delivery');
   const [title, setTitle] = useState('');
   const [pickupAddress, setPickupAddress] = useState('');
+  const [pickupCoords, setPickupCoords] = useState(DEFAULT_CAMPUS_COORDS);
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryCoords, setDeliveryCoords] = useState({
+    latitude: 10.8812,
+    longitude: 106.7828,
+  });
   const [bounty, setBounty] = useState('25000');
   const [paymentMethod, setPaymentMethod] = useState<TaskPaymentMethod>('transfer');
   const [deadline, setDeadline] = useState('Trước 18h hôm nay');
@@ -51,31 +56,41 @@ export default function CreateTaskScreen({ navigation }: any) {
   const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const pickupGeohash = useMemo(
+    () => generateGeohash(pickupCoords.latitude, pickupCoords.longitude),
+    [pickupCoords]
+  );
+  const deliveryGeohash = useMemo(
+    () => generateGeohash(deliveryCoords.latitude, deliveryCoords.longitude),
+    [deliveryCoords]
+  );
+
   const formatCurrency = (val: string) => {
     const num = parseInt(val.replace(/\D/g, ''), 10);
     return isNaN(num) ? '0' : new Intl.NumberFormat('vi-VN').format(num);
   };
 
+  const handleSelectPickupPreset = (preset: CampusPreset) => {
+    setPickupAddress(preset.address);
+    setPickupCoords({ latitude: preset.latitude, longitude: preset.longitude });
+  };
+
+  const handleSelectDeliveryPreset = (preset: CampusPreset) => {
+    setDeliveryAddress(preset.address);
+    setDeliveryCoords({ latitude: preset.latitude, longitude: preset.longitude });
+  };
+
   const handleAddImage = () => {
-    Alert.alert(
+    if (images.length >= 3) {
+      Alert.alert('Giới hạn', 'Bạn chỉ có thể tải lên tối đa 3 ảnh.');
+      return;
+    }
+    chooseImageWithPrompt(
       'Tải ảnh lên',
       'Chọn ảnh từ thư viện hoặc chụp ảnh kiện hàng / hóa đơn minh họa.',
-      [
-        {
-          text: 'Thêm ảnh mẫu minh họa',
-          onPress: () => {
-            if (images.length < 3) {
-              setImages((prev) => [
-                ...prev,
-                'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&q=80',
-              ]);
-            } else {
-              Alert.alert('Giới hạn', 'Bạn chỉ có thể tải lên tối đa 3 ảnh.');
-            }
-          },
-        },
-        { text: 'Hủy', style: 'cancel' },
-      ]
+      (uri) => {
+        setImages((prev) => (prev.length < 3 ? [...prev, uri] : prev));
+      }
     );
   };
 
@@ -83,7 +98,30 @@ export default function CreateTaskScreen({ navigation }: any) {
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
+  const handleReset = () => {
+    setTitle('');
+    setPickupAddress('');
+    setPickupCoords(DEFAULT_CAMPUS_COORDS);
+    setDeliveryAddress('');
+    setDeliveryCoords({ latitude: 10.8812, longitude: 106.7828 });
+    setBounty('25000');
+    setDescription('');
+    setImages([]);
+  };
+
+  const handleSubmit = async () => {
+    if (!user?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên trước khi đăng việc.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+
     if (!title.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập tiêu đề việc cần nhờ.');
       return;
@@ -103,11 +141,33 @@ export default function CreateTaskScreen({ navigation }: any) {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await createTask(
+        {
+          title: title.trim(),
+          description: description.trim(),
+          bounty: bountyNum,
+          paymentMethod,
+          category,
+          deadline,
+          pickupLocation: {
+            latitude: pickupCoords.latitude,
+            longitude: pickupCoords.longitude,
+            address: pickupAddress.trim(),
+          },
+          deliveryLocation: {
+            latitude: deliveryCoords.latitude,
+            longitude: deliveryCoords.longitude,
+            address: deliveryAddress.trim(),
+          },
+          imageUrls: images,
+        },
+        user
+      );
+
       Alert.alert(
         'Đăng việc thành công! 🚀',
-        'Công việc của bạn đã xuất hiện trên Bảng tin sinh viên quanh Làng Đại học.',
+        'Công việc của bạn đã được lưu và hiển thị ngay trên Bảng tin sinh viên.',
         [
           {
             text: 'Về Bảng tin',
@@ -115,7 +175,14 @@ export default function CreateTaskScreen({ navigation }: any) {
           },
         ]
       );
-    }, 600);
+    } catch (error: any) {
+      Alert.alert(
+        'Đăng việc thất bại',
+        error?.message || 'Không thể đăng công việc lên hệ thống. Vui lòng thử lại.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -130,15 +197,7 @@ export default function CreateTaskScreen({ navigation }: any) {
           <Feather name="x" size={24} color={colors.neutral.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Đăng việc vặt cần nhờ</Text>
-        <TouchableOpacity
-          onPress={() => {
-            setTitle('');
-            setPickupAddress('');
-            setDeliveryAddress('');
-            setDescription('');
-            setImages([]);
-          }}
-        >
+        <TouchableOpacity onPress={handleReset} disabled={loading}>
           <Text style={styles.resetText}>Làm mới</Text>
         </TouchableOpacity>
       </View>
@@ -220,18 +279,21 @@ export default function CreateTaskScreen({ navigation }: any) {
 
             {/* Quick Pickup Pills */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickLocScroll}>
-              {QUICK_PICKUPS.map((loc, i) => (
+              {CAMPUS_PICKUP_PRESETS.map((loc) => (
                 <TouchableOpacity
-                  key={i}
+                  key={loc.id}
                   style={styles.quickLocChip}
-                  onPress={() => setPickupAddress(loc)}
+                  onPress={() => handleSelectPickupPreset(loc)}
                 >
-                  <Text style={styles.quickLocText}>{loc}</Text>
+                  <Text style={styles.quickLocText}>{loc.address}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <Text style={styles.geoMetaText}>
+              Tọa độ lấy: {pickupCoords.latitude.toFixed(4)}, {pickupCoords.longitude.toFixed(4)} • Geohash: {pickupGeohash}
+            </Text>
 
-            <View style={{ height: 10 }} />
+            <View style={{ height: 12 }} />
 
             {/* Delivery */}
             <View style={styles.locationInputBox}>
@@ -249,16 +311,19 @@ export default function CreateTaskScreen({ navigation }: any) {
 
             {/* Quick Delivery Pills */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickLocScroll}>
-              {QUICK_DELIVERIES.map((loc, i) => (
+              {CAMPUS_DELIVERY_PRESETS.map((loc) => (
                 <TouchableOpacity
-                  key={i}
+                  key={loc.id}
                   style={styles.quickLocChip}
-                  onPress={() => setDeliveryAddress(loc)}
+                  onPress={() => handleSelectDeliveryPreset(loc)}
                 >
-                  <Text style={styles.quickLocText}>{loc}</Text>
+                  <Text style={styles.quickLocText}>{loc.address}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <Text style={styles.geoMetaText}>
+              Tọa độ giao: {deliveryCoords.latitude.toFixed(4)}, {deliveryCoords.longitude.toFixed(4)} • Geohash: {deliveryGeohash}
+            </Text>
           </View>
 
           {/* 5. BOUNTY & PAYMENT METHOD */}
@@ -373,11 +438,11 @@ export default function CreateTaskScreen({ navigation }: any) {
 
           {/* 7. IMAGES UPLOAD */}
           <View style={styles.formSection}>
-            <Text style={styles.fieldLabel}>Ảnh đính kèm (hóa đơn, gói hàng)</Text>
+            <Text style={styles.fieldLabel}>Ảnh đính kèm ({images.length}/3)</Text>
             <View style={styles.imagesRow}>
               {images.map((url, i) => (
                 <View key={i} style={styles.imageThumbBox}>
-                  <Feather name="image" size={32} color={colors.primary[600]} />
+                  <Image source={{ uri: url }} style={styles.imageThumb} resizeMode="cover" />
                   <TouchableOpacity
                     style={styles.removeImageBtn}
                     onPress={() => handleRemoveImage(i)}
@@ -394,6 +459,7 @@ export default function CreateTaskScreen({ navigation }: any) {
                 </TouchableOpacity>
               )}
             </View>
+            <Text style={styles.helperText}>Ảnh sẽ được tải lên Firebase Storage khi đăng bài</Text>
           </View>
 
           {/* 8. DESCRIPTION */}
@@ -419,14 +485,18 @@ export default function CreateTaskScreen({ navigation }: any) {
       {/* 9. SUBMIT BUTTON */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.submitBtn}
+          style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
           onPress={handleSubmit}
           disabled={loading}
           activeOpacity={0.85}
         >
-          <Feather name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Feather name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+          )}
           <Text style={styles.submitBtnText}>
-            {loading ? 'Đang đăng tin...' : 'Đăng việc vặt ngay'}
+            {loading ? 'Đang tải ảnh & đăng tin...' : 'Đăng việc vặt ngay'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -562,6 +632,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.neutral.textSecondary,
   },
+  geoMetaText: {
+    fontSize: 10,
+    color: colors.neutral.textMuted,
+    marginTop: 4,
+  },
   bountyInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -667,6 +742,7 @@ const styles = StyleSheet.create({
   imagesRow: {
     flexDirection: 'row',
     gap: spacing[3],
+    flexWrap: 'wrap',
   },
   uploadBox: {
     width: 80,
@@ -693,6 +769,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    overflow: 'visible',
+  },
+  imageThumb: {
+    width: '100%',
+    height: '100%',
+    borderRadius: borderRadius.lg,
   },
   removeImageBtn: {
     position: 'absolute',
@@ -738,6 +820,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
     paddingVertical: 14,
     borderRadius: borderRadius.xl,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
   },
   submitBtnText: {
     fontSize: typography.fontSize.sm,

@@ -8,45 +8,33 @@ import {
   Image,
   Share,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Product } from '../types';
+import { useProductDetail } from '../features/market/hooks/useProducts';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
 
-const DEFAULT_PRODUCT: Product = {
-  productId: 'p1',
-  title: 'Giáo trình Giải tích 1 & Đại số tuyến tính ĐHQG TP.HCM',
-  description:
-    'Sách do Nhà xuất bản ĐHQG ấn hành, còn mới 95%, không rách bìa hay viết bậy. Đã highlight các công thức quan trọng và phương pháp giải đề thi cuối kỳ. Tặng kèm tập photo đề thi mẫu có đáp án chi tiết các năm trước cho bạn nào nhiệt tình mua sớm.',
-  price: 35000,
-  isFree: false,
-  category: 'book',
-  condition: 'like-new',
-  imageUrls: [
-    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80',
-    'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=600&q=80',
-  ],
-  sellerId: 'u10',
-  sellerName: 'Vũ Thị Ngọc',
-  sellerTrustScore: 4.9,
-  location: {
-    latitude: 10.88,
-    longitude: 106.78,
-    address: 'Sảnh Tòa BA4, KTX Khu B ĐHQG TP.HCM',
-  },
-  distanceKm: 0.6,
-  status: 'available',
-  createdAt: Date.now() - 35 * 60 * 1000,
-};
-
 export default function ProductDetailScreen({ route, navigation }: any) {
-  const product: Product = route?.params?.product || DEFAULT_PRODUCT;
+  const initialProduct: Product | undefined = route?.params?.product;
+  const productId: string | undefined = route?.params?.productId || initialProduct?.productId;
+
+  const { product, loading, error } = useProductDetail(productId, initialProduct);
   const [activeImgIndex, setActiveImgIndex] = useState(0);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
+  };
+
+  const getTimeAgo = (timestamp: number) => {
+    const diffMinutes = Math.floor((Date.now() - timestamp) / (1000 * 60));
+    if (diffMinutes < 1) return 'Vừa xong';
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    return `${Math.floor(diffHours / 24)} ngày trước`;
   };
 
   const getConditionLabel = (condition: string) => {
@@ -80,6 +68,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   };
 
   const handleShare = async () => {
+    if (!product) return;
     try {
       await Share.share({
         message: `[UniShare Chợ Cũ] ${product.title} - Giá: ${
@@ -92,17 +81,66 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   };
 
   const handleMakeOffer = () => {
+    if (!product) return;
     Alert.prompt
       ? Alert.prompt('Đề xuất giá mới', 'Nhập mức giá bạn muốn mặc cả (VNĐ):', [
           { text: 'Hủy', style: 'cancel' },
           {
             text: 'Gửi đề xuất',
-            onPress: (val) =>
-              Alert.alert('Thành công', `Đã gửi đề xuất ${val}đ đến người bán!`),
+            onPress: (val?: string) =>
+              Alert.alert('Thành công', `Đã gửi đề xuất ${val || ''}đ đến ${product.sellerName}!`),
           },
         ])
       : Alert.alert('Đề xuất giá', 'Chức năng gửi giá đề xuất nhanh đến người bán qua khung chat.');
   };
+
+  if (loading && !product) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={22} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.navTitle}>Chi tiết sản phẩm</Text>
+          <View style={styles.navBtnPlaceholder} />
+        </View>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={colors.secondary[500]} />
+          <Text style={styles.centerStateText}>Đang tải thông tin sản phẩm...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!product) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={22} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.navTitle}>Chi tiết sản phẩm</Text>
+          <View style={styles.navBtnPlaceholder} />
+        </View>
+        <View style={styles.centerState}>
+          <Feather name="shopping-bag" size={48} color={colors.neutral.disabled} />
+          <Text style={styles.centerStateTitle}>Không tìm thấy sản phẩm</Text>
+          <Text style={styles.centerStateText}>
+            {error || 'Sản phẩm này có thể đã bị xóa hoặc không còn tồn tại.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.backHomeBtn}
+            onPress={() => navigation?.goBack()}
+          >
+            <Text style={styles.backHomeBtnText}>Quay lại chợ đồ cũ</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const hasImages = product.imageUrls && product.imageUrls.length > 0;
+  const safeImgIndex = hasImages ? Math.min(activeImgIndex, product.imageUrls.length - 1) : 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -143,16 +181,18 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       >
         {/* 2. IMAGE GALLERY HERO */}
         <View style={styles.galleryCard}>
-          <Image
-            source={{
-              uri:
-                product.imageUrls && product.imageUrls.length > 0
-                  ? product.imageUrls[activeImgIndex]
-                  : 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80',
-            }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
+          {hasImages ? (
+            <Image
+              source={{ uri: product.imageUrls[safeImgIndex] }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.heroPlaceholder}>
+              <Feather name="image" size={48} color={colors.neutral.disabled} />
+              <Text style={styles.heroPlaceholderText}>Chưa có hình ảnh sản phẩm</Text>
+            </View>
+          )}
 
           {/* Badges on image */}
           <View style={styles.imageOverlayBadges}>
@@ -168,24 +208,24 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               </View>
             )}
 
-            {product.imageUrls && product.imageUrls.length > 1 && (
+            {hasImages && product.imageUrls.length > 1 && (
               <View style={styles.imageCounter}>
                 <Text style={styles.imageCounterText}>
-                  {activeImgIndex + 1}/{product.imageUrls.length}
+                  {safeImgIndex + 1}/{product.imageUrls.length}
                 </Text>
               </View>
             )}
           </View>
 
           {/* Thumbnails row if multiple */}
-          {product.imageUrls && product.imageUrls.length > 1 && (
+          {hasImages && product.imageUrls.length > 1 && (
             <View style={styles.thumbnailRow}>
               {product.imageUrls.map((url, i) => (
                 <TouchableOpacity
                   key={i}
                   style={[
                     styles.thumbnailWrap,
-                    activeImgIndex === i && styles.thumbnailActive,
+                    safeImgIndex === i && styles.thumbnailActive,
                   ]}
                   onPress={() => setActiveImgIndex(i)}
                 >
@@ -200,7 +240,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         <View style={styles.card}>
           <View style={styles.categoryRow}>
             <Text style={styles.categoryText}>{getCategoryLabel(product.category)}</Text>
-            <Text style={styles.postTimeText}>30 phút trước</Text>
+            <Text style={styles.postTimeText}>{getTimeAgo(product.createdAt)}</Text>
           </View>
 
           <Text style={styles.productTitle}>{product.title}</Text>
@@ -229,7 +269,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               ) : (
                 <View style={styles.sellerAvatarFallback}>
                   <Text style={styles.sellerAvatarLetter}>
-                    {product.sellerName.charAt(0).toUpperCase()}
+                    {(product.sellerName || 'U').charAt(0).toUpperCase()}
                   </Text>
                 </View>
               )}
@@ -243,9 +283,15 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               <View style={styles.sellerScoreLine}>
                 <Feather name="star" size={12} color="#D97706" />
                 <Text style={styles.sellerRating}>
-                  {product.sellerTrustScore ? product.sellerTrustScore.toFixed(1) : '4.9'}
+                  {product.sellerTrustScore ? product.sellerTrustScore.toFixed(1) : '5.0'}
                 </Text>
-                <Text style={styles.sellerTrades}> (18 giao dịch uy tín)</Text>
+                <Text style={styles.sellerTrades}>
+                  {product.status === 'available'
+                    ? ' • Đang mở bán'
+                    : product.status === 'sold'
+                    ? ' • Đã bán'
+                    : ''}
+                </Text>
               </View>
             </View>
 
@@ -269,7 +315,9 @@ export default function ProductDetailScreen({ route, navigation }: any) {
             <View style={styles.locationTextCol}>
               <Text style={styles.locationAddress}>{product.location.address}</Text>
               <Text style={styles.locationDistance}>
-                Cách bạn ~{product.distanceKm || 0.6} km • Giao dịch trực tiếp tại sảnh KTX
+                {product.distanceKm !== undefined
+                  ? `Cách bạn ~${product.distanceKm} km • Giao dịch trực tiếp tại sảnh KTX`
+                  : 'Giao dịch trực tiếp quanh khu vực ĐHQG'}
               </Text>
             </View>
           </View>
@@ -278,7 +326,9 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         {/* 6. DESCRIPTION DETAILS */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Mô tả sản phẩm</Text>
-          <Text style={styles.descriptionBody}>{product.description}</Text>
+          <Text style={styles.descriptionBody}>
+            {product.description || 'Người bán chưa bổ sung mô tả chi tiết.'}
+          </Text>
 
           <View style={styles.studentTip}>
             <Feather name="info" size={16} color={colors.secondary[600]} />
@@ -307,11 +357,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={styles.chatSellerBtn}
           onPress={() =>
-            navigation?.navigate('ChatRoom', {
-              partnerName: product.sellerName,
-              productTitle: product.title,
-              price: product.price,
-            })
+            Alert.alert('Thông báo', `Tính năng nhắn tin với ${product.sellerName} đang được kết nối.`)
           }
           activeOpacity={0.85}
         >
@@ -346,6 +392,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.neutral.background,
   },
+  navBtnPlaceholder: {
+    width: 38,
+    height: 38,
+  },
   navTitle: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold,
@@ -354,6 +404,35 @@ const styles = StyleSheet.create({
   navRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+    gap: spacing[3],
+  },
+  centerStateTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.neutral.textPrimary,
+  },
+  centerStateText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+  },
+  backHomeBtn: {
+    marginTop: spacing[2],
+    backgroundColor: colors.secondary[500],
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.lg,
+  },
+  backHomeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.sm,
   },
   scrollContent: {
     padding: spacing[4],
@@ -371,6 +450,18 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 250,
     backgroundColor: '#F1F5F9',
+  },
+  heroPlaceholder: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroPlaceholderText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.neutral.textMuted,
   },
   imageOverlayBadges: {
     position: 'absolute',

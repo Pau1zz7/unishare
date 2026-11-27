@@ -55,7 +55,9 @@ export interface Task {
   imageUrls?: string[];
   workerId?: string | null;
   workerName?: string | null;
+  deadline?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export type ProductCategory = 'book' | 'electronic' | 'furniture' | 'clothing' | 'other';
@@ -79,6 +81,7 @@ export interface Product {
   distanceKm?: number;
   status: ProductStatus;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface CreateProductInput {

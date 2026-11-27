@@ -9,212 +9,53 @@ import {
   RefreshControl,
   Modal,
   ScrollView,
+  Image,
+  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Task, Product } from '../types';
 import { TaskCard } from '../components/TaskCard';
 import { ProductCard } from '../components/ProductCard';
+import { useAuthStore } from '../store/useAuthStore';
+import { useTasks } from '../features/tasks/hooks/useTasks';
+import { acceptTask } from '../features/tasks/services/taskService';
+import { useProducts } from '../features/market/hooks/useProducts';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
-
-// Mock Data Việc Vặt
-const MOCK_TASKS: Task[] = [
-  {
-    taskId: 't1',
-    title: 'Nhận hộ kiện hàng Shopee tại Cổng 1 KTX Khu B',
-    description: 'Mình đang học ở trường không về kịp trước 17h, nhờ bạn nào lấy hộ kiện quần áo mang về sảnh Tòa B3 giúp mình.',
-    requesterId: 'u1',
-    requesterName: 'Nguyễn Văn An',
-    requesterTrustScore: 4.9,
-    bounty: 25000,
-    paymentMethod: 'transfer',
-    category: 'delivery',
-    pickupLocation: {
-      latitude: 10.88,
-      longitude: 106.78,
-      address: 'Cổng 1 KTX Khu B ĐHQG',
-    },
-    deliveryLocation: {
-      latitude: 10.881,
-      longitude: 106.782,
-      address: 'Sảnh Tòa B3, KTX Khu B',
-    },
-    status: 'open',
-    distanceKm: 0.8,
-    createdAt: Date.now() - 15 * 60 * 1000, // 15 mins ago
-  },
-  {
-    taskId: 't2',
-    title: 'In & bấm ghim tập tài liệu Giải tích 1 (40 trang)',
-    description: 'Cần in 1 bản 2 mặt slide bài giảng tại tiệm photo cổng ĐH KHTN rồi mang sang nhà xe.',
-    requesterId: 'u2',
-    requesterName: 'Trần Thị Mai',
-    requesterTrustScore: 5.0,
-    bounty: 30000,
-    paymentMethod: 'cash',
-    category: 'print',
-    pickupLocation: {
-      latitude: 10.87,
-      longitude: 106.79,
-      address: 'Quán Photo Minh Đạt - Cổng ĐH KHTN',
-    },
-    deliveryLocation: {
-      latitude: 10.872,
-      longitude: 106.792,
-      address: 'Khu tự học Nhà C ĐH KHTN',
-    },
-    status: 'open',
-    distanceKm: 1.2,
-    createdAt: Date.now() - 40 * 60 * 1000, // 40 mins ago
-  },
-  {
-    taskId: 't3',
-    title: 'Mua hộ 2 phần cơm gà xối mỡ & 1 trà tắc',
-    description: 'Giao lên phòng 502 tòa A14 KTX Khu A. Tiền cơm hết 65k mình chuyển khoản hoàn trả kèm tiền công.',
-    requesterId: 'u3',
-    requesterName: 'Lê Hoàng Long',
-    requesterTrustScore: 4.8,
-    bounty: 35000,
-    paymentMethod: 'transfer',
-    category: 'food',
-    pickupLocation: {
-      latitude: 10.875,
-      longitude: 106.8,
-      address: 'Quán Cơm Sinh Viên - Ngã 3 621',
-    },
-    deliveryLocation: {
-      latitude: 10.876,
-      longitude: 106.798,
-      address: 'P.502 Tòa A14 KTX Khu A',
-    },
-    status: 'open',
-    distanceKm: 2.1,
-    createdAt: Date.now() - 75 * 60 * 1000, // 1 hour ago
-  },
-  {
-    taskId: 't4',
-    title: 'Gia sư nhanh bài tập Cấu trúc dữ liệu & Giải thuật',
-    description: 'Cần bạn nào nắm chắc Tree & Graph giải thích giúp mình 3 bài tập lớn trong 1 tiếng tối nay.',
-    requesterId: 'u4',
-    requesterName: 'Đặng Tuấn Kiệt',
-    requesterTrustScore: 4.7,
-    bounty: 80000,
-    paymentMethod: 'transfer',
-    category: 'study',
-    pickupLocation: {
-      latitude: 10.87,
-      longitude: 106.8,
-      address: 'Thư viện Trung tâm ĐHQG',
-    },
-    deliveryLocation: {
-      latitude: 10.87,
-      longitude: 106.8,
-      address: 'Phòng học nhóm Thư viện TT',
-    },
-    status: 'open',
-    distanceKm: 0.5,
-    createdAt: Date.now() - 120 * 60 * 1000,
-  },
-];
-
-// Mock Data Chợ Đồ Cũ
-const MOCK_PRODUCTS: Product[] = [
-  {
-    productId: 'p1',
-    title: 'Giáo trình Giải tích 1 & Đại số tuyến tính ĐHQG',
-    description: 'Sách còn mới 95%, có highlight một số công thức trọng tâm. Tặng kèm tập đề cương cương ôn tập.',
-    price: 35000,
-    isFree: false,
-    category: 'book',
-    condition: 'like-new',
-    imageUrls: ['https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80'],
-    sellerId: 'u10',
-    sellerName: 'Vũ Thị Ngọc',
-    sellerTrustScore: 4.9,
-    location: {
-      latitude: 10.88,
-      longitude: 106.78,
-      address: 'KTX Khu B ĐHQG',
-    },
-    distanceKm: 0.6,
-    status: 'available',
-    createdAt: Date.now() - 25 * 60 * 1000,
-  },
-  {
-    productId: 'p2',
-    title: 'Nồi cơm điện mini Lock&Lock 0.8L cho sinh viên',
-    description: 'Nấu cơm nhanh, chống dính tốt, dùng được 6 tháng. Mình chuyển trọ nên thanh lý gấp.',
-    price: 150000,
-    isFree: false,
-    category: 'electronic',
-    condition: 'used',
-    imageUrls: ['https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?w=400&q=80'],
-    sellerId: 'u11',
-    sellerName: 'Phạm Đức Duy',
-    sellerTrustScore: 4.8,
-    location: {
-      latitude: 10.875,
-      longitude: 106.79,
-      address: 'KTX Khu A ĐHQG',
-    },
-    distanceKm: 1.5,
-    status: 'available',
-    createdAt: Date.now() - 90 * 60 * 1000,
-  },
-  {
-    productId: 'p3',
-    title: 'Bàn học gấp gọn chân chữ U mặt gỗ MDF',
-    description: 'Bàn còn rất chắc chắn, tặng lại cho bạn nào tân sinh viên cần dùng học tập tại phòng KTX.',
-    price: 0,
-    isFree: true,
-    category: 'furniture',
-    condition: 'used',
-    imageUrls: ['https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=400&q=80'],
-    sellerId: 'u12',
-    sellerName: 'Lê Minh Quân',
-    sellerTrustScore: 5.0,
-    location: {
-      latitude: 10.88,
-      longitude: 106.78,
-      address: 'Tòa C1, KTX Khu B',
-    },
-    distanceKm: 0.9,
-    status: 'available',
-    createdAt: Date.now() - 180 * 60 * 1000,
-  },
-  {
-    productId: 'p4',
-    title: 'Cặp vợt cầu lông Yonex kèm túi và 3 quả cầu',
-    description: 'Vợt căng 10kg phù hợp bạn nào muốn tập thể thao buổi chiều ở sân KTX.',
-    price: 85000,
-    isFree: false,
-    category: 'other',
-    condition: 'like-new',
-    imageUrls: ['https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=400&q=80'],
-    sellerId: 'u13',
-    sellerName: 'Nguyễn Hải Đăng',
-    sellerTrustScore: 4.6,
-    location: {
-      latitude: 10.87,
-      longitude: 106.8,
-      address: 'Sân bóng ĐH CNTT (UIT)',
-    },
-    distanceKm: 1.8,
-    status: 'available',
-    createdAt: Date.now() - 300 * 60 * 1000,
-  },
-];
 
 type ActiveTab = 'tasks' | 'market';
 
 export default function HomeFeedScreen({ navigation }: any) {
+  const user = useAuthStore((state) => state.user);
+  const {
+    tasks,
+    loading: loadingTasks,
+    refreshing: refreshingTasks,
+    error: tasksError,
+    refresh: refreshTasks,
+  } = useTasks();
+  const {
+    products,
+    loading: loadingProducts,
+    refreshing: refreshingProducts,
+    error: productsError,
+    refresh: refreshProducts,
+  } = useProducts();
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('tasks');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskFilter, setSelectedTaskFilter] = useState<string>('all');
   const [selectedMarketCategory, setSelectedMarketCategory] = useState<string>('all');
-  const [refreshing, setRefreshing] = useState(false);
   const [fabModalVisible, setFabModalVisible] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [acceptingTaskId, setAcceptingTaskId] = useState<string | null>(null);
+
+  const avatarInitial = useMemo(() => {
+    const source = user?.displayName?.trim() || user?.email?.trim() || '';
+    return source ? source.charAt(0).toUpperCase() : 'U';
+  }, [user?.displayName, user?.email]);
 
   // Task Filter options
   const taskFilterChips = [
@@ -238,36 +79,43 @@ export default function HomeFeedScreen({ navigation }: any) {
   ];
 
   const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 800);
+    if (activeTab === 'tasks') {
+      refreshTasks();
+    } else {
+      refreshProducts();
+    }
   };
 
   // Filter Tasks
   const filteredTasks = useMemo(() => {
-    return MOCK_TASKS.filter((task) => {
+    const keyword = searchQuery.trim().toLowerCase();
+    return tasks.filter((task) => {
       const matchQuery =
-        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.pickupLocation.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.deliveryLocation.address.toLowerCase().includes(searchQuery.toLowerCase());
+        !keyword ||
+        task.title.toLowerCase().includes(keyword) ||
+        (task.description ?? '').toLowerCase().includes(keyword) ||
+        task.pickupLocation.address.toLowerCase().includes(keyword) ||
+        task.deliveryLocation.address.toLowerCase().includes(keyword);
 
       if (!matchQuery) return false;
 
-      if (selectedTaskFilter === 'near') return (task.distanceKm || 0) <= 2;
+      if (selectedTaskFilter === 'near') return (task.distanceKm ?? 0) <= 2;
       if (selectedTaskFilter === 'highBounty') return task.bounty >= 30000;
       if (selectedTaskFilter !== 'all') return task.category === selectedTaskFilter;
 
       return true;
     });
-  }, [searchQuery, selectedTaskFilter]);
+  }, [tasks, searchQuery, selectedTaskFilter]);
 
   // Filter Products
   const filteredProducts = useMemo(() => {
-    return MOCK_PRODUCTS.filter((product) => {
+    const keyword = searchQuery.trim().toLowerCase();
+    return products.filter((product) => {
       const matchQuery =
-        product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.location.address.toLowerCase().includes(searchQuery.toLowerCase());
+        !keyword ||
+        product.title.toLowerCase().includes(keyword) ||
+        (product.description ?? '').toLowerCase().includes(keyword) ||
+        product.location.address.toLowerCase().includes(keyword);
 
       if (!matchQuery) return false;
 
@@ -276,7 +124,7 @@ export default function HomeFeedScreen({ navigation }: any) {
 
       return true;
     });
-  }, [searchQuery, selectedMarketCategory]);
+  }, [products, searchQuery, selectedMarketCategory]);
 
   const toggleBookmark = (product: Product) => {
     setBookmarkedIds((prev) => {
@@ -291,16 +139,117 @@ export default function HomeFeedScreen({ navigation }: any) {
   };
 
   const handleTaskPress = (task: Task) => {
-    if (navigation?.navigate) {
-      navigation.navigate('TaskDetail', { taskId: task.taskId, task });
-    }
+    navigation?.navigate('TaskDetail', { taskId: task.taskId, task });
   };
 
   const handleProductPress = (product: Product) => {
-    if (navigation?.navigate) {
-      navigation.navigate('ProductDetail', { productId: product.productId, product });
+    navigation?.navigate('ProductDetail', { productId: product.productId, product });
+  };
+
+  const executeAcceptTask = async (task: Task) => {
+    if (!user?.uid) return;
+    if (acceptingTaskId) return;
+
+    setAcceptingTaskId(task.taskId);
+    try {
+      await acceptTask(
+        task.taskId,
+        user.uid,
+        user.displayName || user.email || 'Sinh viên UniShare'
+      );
+      Alert.alert(
+        'Nhận việc thành công!',
+        `Bạn đã nhận việc "${task.title}". Hãy xem chi tiết để liên hệ với người nhờ nhé.`,
+        [
+          {
+            text: 'Xem chi tiết',
+            onPress: () =>
+              navigation?.navigate('TaskDetail', {
+                taskId: task.taskId,
+                task: {
+                  ...task,
+                  status: 'matched',
+                  workerId: user.uid,
+                  workerName: user.displayName || user.email,
+                },
+              }),
+          },
+          { text: 'Đóng' },
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert(
+        'Không thể nhận việc',
+        error?.message || 'Đã có lỗi xảy ra khi nhận việc. Vui lòng thử lại.'
+      );
+    } finally {
+      setAcceptingTaskId(null);
     }
   };
+
+  const handleQuickAcceptTask = (task: Task) => {
+    if (!user?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên để nhận việc.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+
+    if (task.requesterId === user.uid) {
+      Alert.alert('Thông báo', 'Bạn không thể tự nhận việc do chính mình đăng.');
+      return;
+    }
+
+    const formattedBounty = new Intl.NumberFormat('vi-VN').format(task.bounty) + ' đ';
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' &&
+        window.confirm(
+          `Xác nhận nhận việc "${task.title}" với thù lao ${formattedBounty}?`
+        );
+      if (confirmed) {
+        executeAcceptTask(task);
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Xác nhận nhận việc',
+      `Bạn chắc chắn muốn nhận việc "${task.title}" với thù lao ${formattedBounty}?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Đồng ý nhận',
+          onPress: () => executeAcceptTask(task),
+        },
+      ]
+    );
+  };
+
+  const handleNavigateCreate = (screen: 'CreateTask' | 'CreateProduct') => {
+    setFabModalVisible(false);
+    if (!user?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên để đăng bài mới.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+    navigation?.navigate(screen);
+  };
+
+  const isLoadingCurrentTab = activeTab === 'tasks' ? loadingTasks : loadingProducts;
+  const currentError = activeTab === 'tasks' ? tasksError : productsError;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -311,15 +260,19 @@ export default function HomeFeedScreen({ navigation }: any) {
           onPress={() => navigation?.navigate('Profile')}
           activeOpacity={0.8}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>K</Text>
-          </View>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{avatarInitial}</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.locationSelector} activeOpacity={0.7}>
           <Feather name="map-pin" size={14} color={colors.primary[600]} />
           <Text style={styles.locationCampus} numberOfLines={1}>
-            ĐHQG TP.HCM • KTX Khu B
+            {user?.university || 'ĐHQG TP.HCM • KTX Khu B'}
           </Text>
           <Feather name="chevron-down" size={14} color={colors.neutral.textMuted} />
         </TouchableOpacity>
@@ -333,7 +286,7 @@ export default function HomeFeedScreen({ navigation }: any) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconBtn}
-            onPress={() => navigation?.navigate('Notifications')}
+            onPress={() => Alert.alert('Thông báo', 'Bạn chưa có thông báo mới.')}
           >
             <Feather name="bell" size={20} color={colors.neutral.textPrimary} />
             <View style={styles.unreadDot} />
@@ -366,7 +319,12 @@ export default function HomeFeedScreen({ navigation }: any) {
 
         <TouchableOpacity
           style={styles.filterTuneBtn}
-          onPress={() => alert('Bộ lọc nâng cao (Khoảng cách, Mức giá, Thời gian)')}
+          onPress={() =>
+            Alert.alert(
+              'Bộ lọc nâng cao',
+              'Sử dụng các thẻ lọc bên dưới để lọc nhanh theo danh mục, thù lao và khoảng cách.'
+            )
+          }
         >
           <Feather name="sliders" size={18} color={colors.primary[600]} />
         </TouchableOpacity>
@@ -392,7 +350,7 @@ export default function HomeFeedScreen({ navigation }: any) {
                 activeTab === 'tasks' && styles.activeTabButtonText,
               ]}
             >
-              Việc Vặt ({MOCK_TASKS.length})
+              Việc Vặt ({tasks.length})
             </Text>
           </TouchableOpacity>
 
@@ -413,7 +371,7 @@ export default function HomeFeedScreen({ navigation }: any) {
                 activeTab === 'market' && styles.activeTabButtonText,
               ]}
             >
-              Chợ Đồ Cũ ({MOCK_PRODUCTS.length})
+              Chợ Đồ Cũ ({products.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -462,7 +420,22 @@ export default function HomeFeedScreen({ navigation }: any) {
 
       {/* 5. FEED CONTENT (FlatList) */}
       <View style={styles.contentContainer}>
-        {activeTab === 'tasks' ? (
+        {currentError ? (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-circle" size={16} color={colors.semantic.danger.DEFAULT} />
+            <Text style={styles.errorBannerText}>{currentError}</Text>
+            <TouchableOpacity onPress={onRefresh}>
+              <Text style={styles.retryText}>Thử lại</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {isLoadingCurrentTab ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" color={colors.primary[600]} />
+            <Text style={styles.loadingText}>Đang tải dữ liệu realtime...</Text>
+          </View>
+        ) : activeTab === 'tasks' ? (
           <FlatList
             data={filteredTasks}
             keyExtractor={(item) => item.taskId}
@@ -470,18 +443,18 @@ export default function HomeFeedScreen({ navigation }: any) {
               <TaskCard
                 task={item}
                 onPress={handleTaskPress}
-                onQuickApply={(task) => alert(`Đã gửi yêu cầu nhận việc: "${task.title}"`)}
+                onQuickApply={handleQuickAcceptTask}
               />
             )}
             contentContainerStyle={styles.listPadding}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            refreshControl={<RefreshControl refreshing={refreshingTasks} onRefresh={onRefresh} />}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Feather name="inbox" size={48} color={colors.neutral.disabled} />
                 <Text style={styles.emptyTitle}>Chưa có việc vặt phù hợp</Text>
                 <Text style={styles.emptySubtitle}>
-                  Thử tìm kiếm với từ khóa khác hoặc xóa bớt bộ lọc bạn nhé!
+                  Thử tìm kiếm với từ khóa khác, xóa bớt bộ lọc hoặc nhấn nút + để đăng việc mới!
                 </Text>
               </View>
             }
@@ -502,13 +475,13 @@ export default function HomeFeedScreen({ navigation }: any) {
             )}
             contentContainerStyle={styles.gridPadding}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            refreshControl={<RefreshControl refreshing={refreshingProducts} onRefresh={onRefresh} />}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Feather name="shopping-bag" size={48} color={colors.neutral.disabled} />
                 <Text style={styles.emptyTitle}>Chưa có món đồ nào</Text>
                 <Text style={styles.emptySubtitle}>
-                  Không tìm thấy sản phẩm trong danh mục này quanh khu vực bạn.
+                  Không tìm thấy sản phẩm trong danh mục này hoặc hãy là người đầu tiên đăng bán!
                 </Text>
               </View>
             }
@@ -542,10 +515,7 @@ export default function HomeFeedScreen({ navigation }: any) {
 
             <TouchableOpacity
               style={styles.fabMenuItem}
-              onPress={() => {
-                setFabModalVisible(false);
-                navigation?.navigate('CreateTask');
-              }}
+              onPress={() => handleNavigateCreate('CreateTask')}
             >
               <View style={[styles.fabMenuIcon, { backgroundColor: colors.primary[100] }]}>
                 <Feather name="zap" size={22} color={colors.primary[600]} />
@@ -560,10 +530,7 @@ export default function HomeFeedScreen({ navigation }: any) {
 
             <TouchableOpacity
               style={styles.fabMenuItem}
-              onPress={() => {
-                setFabModalVisible(false);
-                navigation?.navigate('CreateProduct');
-              }}
+              onPress={() => handleNavigateCreate('CreateProduct')}
             >
               <View style={[styles.fabMenuIcon, { backgroundColor: colors.secondary[100] }]}>
                 <Feather name="tag" size={22} color={colors.secondary[600]} />
@@ -611,6 +578,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
   },
   avatarText: {
     color: '#FFFFFF',
@@ -768,6 +742,38 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.semantic.danger.light,
+    marginHorizontal: spacing[4],
+    marginBottom: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.lg,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: typography.fontSize.xs,
+    color: colors.semantic.danger.text,
+  },
+  retryText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.primary[600],
+  },
+  loadingState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: spacing[3],
+  },
+  loadingText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral.textMuted,
   },
   listPadding: {
     paddingHorizontal: spacing[4],
