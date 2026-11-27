@@ -8,6 +8,7 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import TaskDetailScreen from './src/screens/TaskDetailScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import ReviewRatingScreen from './src/screens/ReviewRatingScreen';
+import ChatScreen from './src/screens/ChatScreen';
 import MainTabNavigator from './src/navigation/MainTabNavigator';
 
 const Stack = createNativeStackNavigator();
@@ -27,6 +28,7 @@ export default function App() {
           <Stack.Screen name="TaskDetail" component={TaskDetailScreen} />
           <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
           <Stack.Screen name="ReviewRating" component={ReviewRatingScreen} />
+          <Stack.Screen name="ChatRoom" component={ChatScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
