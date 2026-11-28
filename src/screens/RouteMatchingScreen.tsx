@@ -1,442 +1,398 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Dimensions,
+  Animated,
+  PanResponder,
   Alert,
-  ActivityIndicator,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Feather } from '@expo/vector-icons';
-import { MapMarkerItem, Coordinates } from '../types';
+import { MapMarkerItem, RouteInfo } from '../types';
 import { MapMarker } from '../components/MapMarker';
 import { MarkerPopupCard } from '../components/MarkerPopupCard';
-import {
-  CAMPUS_PRESETS,
-  CampusPreset,
-  findRouteMatches,
-} from '../features/map/services/mapService';
-import { getCurrentLocation } from '../features/map/services/locationService';
-import {
-  colors,
-  typography,
-  spacing,
-  borderRadius,
-  shadows,
-} from '../theme/tokens';
+import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Mock Route Info
+const MOCK_ROUTE: RouteInfo = {
+  originName: 'ĐH Công Nghệ Thông Tin (UIT)',
+  originCoords: { latitude: 10.87, longitude: 106.8 },
+  destinationName: 'KTX Khu B ĐHQG TP.HCM',
+  destinationCoords: { latitude: 10.882, longitude: 106.782 },
+  totalDistanceKm: 2.4,
+  estimatedDurationMins: 7,
+};
+
+// Mock Markers dọc tuyến đường Làng Đại Học
+const MOCK_MARKERS: MapMarkerItem[] = [
+  {
+    id: 'origin',
+    type: 'origin',
+    title: 'Điểm xuất phát: ĐH CNTT (UIT)',
+    address: 'Khu phố 6, P. Linh Trung, TP. Thủ Đức',
+    latitude: 10.87,
+    longitude: 106.8,
+  },
+  {
+    id: 'destination',
+    type: 'destination',
+    title: 'Điểm đến: KTX Khu B ĐHQG',
+    address: 'Tô Vĩnh Diện, Đông Hòa, Dĩ An',
+    latitude: 10.882,
+    longitude: 106.782,
+  },
+  {
+    id: 'task-1',
+    type: 'task',
+    title: 'Nhận hộ đồ Shopee tại Cổng 1 KTX B',
+    bountyOrPrice: 25000,
+    category: 'delivery',
+    requesterOrSellerName: 'Nguyễn Văn An',
+    trustScore: 4.9,
+    address: 'Cổng 1 KTX Khu B ĐHQG',
+    deviationMeters: 80, // Lệch 80m so với tuyến đường chính
+    latitude: 10.881,
+    longitude: 106.781,
+  },
+  {
+    id: 'task-2',
+    type: 'task',
+    title: 'In & bấm ghim tập tài liệu Giải tích 1',
+    bountyOrPrice: 30000,
+    category: 'print',
+    requesterOrSellerName: 'Trần Thị Mai',
+    trustScore: 5.0,
+    address: 'Quán Photo Cổng ĐH KHTN',
+    deviationMeters: 120, // Lệch 120m
+    latitude: 10.873,
+    longitude: 106.792,
+  },
+  {
+    id: 'task-3',
+    type: 'task',
+    title: 'Mua hộ 2 phần cơm gà xối mỡ & 1 trà tắc',
+    bountyOrPrice: 35000,
+    category: 'food',
+    requesterOrSellerName: 'Lê Hoàng Long',
+    trustScore: 4.8,
+    address: 'Quán Cơm Sinh Viên - Ngã 3 621',
+    deviationMeters: 190, // Lệch 190m
+    latitude: 10.876,
+    longitude: 106.795,
+  },
+  {
+    id: 'prod-1',
+    type: 'product',
+    title: 'Giáo trình Giải tích 1 & ĐSTT ĐHQG',
+    bountyOrPrice: 35000,
+    isFree: false,
+    category: 'book',
+    requesterOrSellerName: 'Vũ Thị Ngọc',
+    trustScore: 4.9,
+    address: 'Sảnh Tòa BA4, KTX Khu B',
+    deviationMeters: 150,
+    latitude: 10.88,
+    longitude: 106.78,
+  },
+  {
+    id: 'prod-2',
+    type: 'product',
+    title: 'Bàn học gấp gọn chân chữ U',
+    bountyOrPrice: 0,
+    isFree: true,
+    category: 'furniture',
+    requesterOrSellerName: 'Lê Minh Quân',
+    trustScore: 5.0,
+    address: 'Tòa C1, KTX Khu B',
+    deviationMeters: 220,
+    latitude: 10.882,
+    longitude: 106.779,
+  },
+];
 
 type FilterMode = 'matched' | 'allTasks' | 'allProducts';
-type PickerTarget = 'origin' | 'destination' | null;
-
-const MAX_DEVIATION_METERS = 300;
 
 export default function RouteMatchingScreen({ navigation }: any) {
-  const mapRef = useRef<MapView>(null);
-
-  const [origin, setOrigin] = useState<CampusPreset>(CAMPUS_PRESETS[0]);
-  const [destination, setDestination] = useState<CampusPreset>(CAMPUS_PRESETS[1]);
-  const [routeCoords, setRouteCoords] = useState<Coordinates[]>([]);
-  const [totalDistanceKm, setTotalDistanceKm] = useState<number>(0);
-  const [estimatedDurationMins, setEstimatedDurationMins] = useState<number>(0);
-  const [matchedTasks, setMatchedTasks] = useState<MapMarkerItem[]>([]);
-  const [allTaskMarkers, setAllTaskMarkers] = useState<MapMarkerItem[]>([]);
-  const [allProductMarkers, setAllProductMarkers] = useState<MapMarkerItem[]>([]);
-  const [selectedMarker, setSelectedMarker] = useState<MapMarkerItem | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<MapMarkerItem | null>(MOCK_MARKERS[2]);
   const [filterMode, setFilterMode] = useState<FilterMode>('matched');
   const [sheetExpanded, setSheetExpanded] = useState(false);
-  const [loadingRoute, setLoadingRoute] = useState(true);
-  const [pickerTarget, setPickerTarget] = useState<PickerTarget>(null);
 
-  const fitMapToRoute = useCallback((coords: Coordinates[]) => {
-    if (coords.length >= 2) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coords, {
-          edgePadding: { top: 60, right: 50, bottom: 90, left: 50 },
-          animated: true,
-        });
-      }, 250);
-    }
-  }, []);
-
-  const loadRouteAndMatches = useCallback(async () => {
-    setLoadingRoute(true);
-    setSelectedMarker(null);
-    try {
-      const result = await findRouteMatches(
-        origin.coords,
-        destination.coords,
-        MAX_DEVIATION_METERS
-      );
-      setRouteCoords(result.route.coordinates);
-      setTotalDistanceKm(result.route.totalDistanceKm);
-      setEstimatedDurationMins(result.route.estimatedDurationMins);
-      setMatchedTasks(result.matchedTasks);
-      setAllTaskMarkers(result.allTaskMarkers);
-      setAllProductMarkers(result.allProductMarkers);
-      fitMapToRoute(result.route.coordinates);
-    } catch (err: any) {
-      Alert.alert(
-        'Lỗi tải dữ liệu',
-        err?.message || 'Không thể tải tuyến đường và danh sách công việc lúc này.'
-      );
-    } finally {
-      setLoadingRoute(false);
-    }
-  }, [origin, destination, fitMapToRoute]);
-
-  useEffect(() => {
-    loadRouteAndMatches();
-  }, [loadRouteAndMatches]);
-
-  const originMarkerItem: MapMarkerItem = useMemo(
-    () => ({
-      id: 'origin',
-      type: 'origin',
-      title: `Điểm đi: ${origin.name}`,
-      address: origin.address,
-      latitude: origin.coords.latitude,
-      longitude: origin.coords.longitude,
-    }),
-    [origin]
-  );
-
-  const destinationMarkerItem: MapMarkerItem = useMemo(
-    () => ({
-      id: 'destination',
-      type: 'destination',
-      title: `Điểm đến: ${destination.name}`,
-      address: destination.address,
-      latitude: destination.coords.latitude,
-      longitude: destination.coords.longitude,
-    }),
-    [destination]
-  );
-
-  const displayedMarkers = useMemo(() => {
+  // Filter markers based on tab
+  const displayedMarkers = MOCK_MARKERS.filter((m) => {
+    if (m.type === 'origin' || m.type === 'destination') return true;
     if (filterMode === 'matched') {
-      const matchedProducts = allProductMarkers.filter(
-        (m) => (m.deviationMeters ?? Infinity) <= MAX_DEVIATION_METERS
-      );
-      return [...matchedTasks, ...matchedProducts];
+      return m.deviationMeters !== undefined && m.deviationMeters <= 300;
     }
-    if (filterMode === 'allTasks') {
-      return allTaskMarkers;
-    }
-    return allProductMarkers;
-  }, [filterMode, matchedTasks, allTaskMarkers, allProductMarkers]);
+    if (filterMode === 'allTasks') return m.type === 'task';
+    if (filterMode === 'allProducts') return m.type === 'product';
+    return true;
+  });
 
-  const totalExtraBounty = useMemo(
-    () =>
-      matchedTasks.reduce((sum, cur) => sum + (cur.bountyOrPrice || 0), 0),
-    [matchedTasks]
+  const matchedTasks = MOCK_MARKERS.filter(
+    (m) => m.type === 'task' && m.deviationMeters !== undefined && m.deviationMeters <= 300
   );
 
-  const handleSwapRoute = () => {
-    const prevOrigin = origin;
-    setOrigin(destination);
-    setDestination(prevOrigin);
-  };
+  const totalExtraBounty = matchedTasks.reduce(
+    (sum, cur) => sum + (cur.bountyOrPrice || 0),
+    0
+  );
 
-  const handleLocateMe = async () => {
-    const coords = await getCurrentLocation();
-    if (!coords) {
-      Alert.alert(
-        'Chưa cấp quyền vị trí',
-        'Vui lòng bật quyền truy cập GPS trong cài đặt điện thoại để định vị.'
-      );
-      return;
-    }
-    setOrigin({
-      id: 'current-gps',
-      name: 'Vị trí hiện tại của bạn',
-      address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`,
-      coords,
-    });
-  };
-
-  const handleSelectPreset = (preset: CampusPreset) => {
-    if (pickerTarget === 'origin') {
-      if (preset.id === destination.id) {
-        handleSwapRoute();
-      } else {
-        setOrigin(preset);
-      }
-    } else if (pickerTarget === 'destination') {
-      if (preset.id === origin.id) {
-        handleSwapRoute();
-      } else {
-        setDestination(preset);
-      }
-    }
-    setPickerTarget(null);
+  const handleSelectMarker = (marker: MapMarkerItem) => {
+    setSelectedMarker(marker);
   };
 
   const handleViewDetail = (marker: MapMarkerItem) => {
     if (marker.type === 'task') {
-      navigation?.navigate('TaskDetail', {
-        taskId: marker.id,
-        task: marker.rawTask,
-      });
+      navigation?.navigate('TaskDetail', { taskId: marker.id });
     } else if (marker.type === 'product') {
-      navigation?.navigate('ProductDetail', {
-        productId: marker.id,
-        product: marker.rawProduct,
-      });
+      navigation?.navigate('ProductDetail', { productId: marker.id });
     }
   };
 
   const handleQuickAction = (marker: MapMarkerItem) => {
-    const partnerId =
-      marker.type === 'task'
-        ? marker.rawTask?.requesterId
-        : marker.rawProduct?.sellerId;
-
-    navigation?.navigate('ChatRoom', {
-      partnerId,
-      partnerName: marker.requesterOrSellerName || 'Sinh viên UniShare',
-      relatedType: marker.type === 'product' ? 'product' : 'task',
-      relatedId: marker.id,
-      relatedTitle: marker.title,
-      price: marker.bountyOrPrice,
-    });
+    if (marker.type === 'task') {
+      Alert.alert(
+        'Nhận việc tiện đường! ⚡',
+        `Bạn đã đăng ký nhận việc "${marker.title}" (Lệch ${marker.deviationMeters}m). Hãy trao đổi ngay với bạn ${marker.requesterOrSellerName}!`,
+        [
+          {
+            text: 'Nhắn tin',
+            onPress: () =>
+              navigation?.navigate('ChatRoom', {
+                partnerName: marker.requesterOrSellerName,
+                taskTitle: marker.title,
+              }),
+          },
+          { text: 'Đóng' },
+        ]
+      );
+    } else {
+      navigation?.navigate('ChatRoom', {
+        partnerName: marker.requesterOrSellerName,
+        productTitle: marker.title,
+      });
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* 1. TOP FLOATING ROUTE PLANNER BAR */}
       <View style={styles.routeHeaderBox}>
         <View style={styles.routeTopRow}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation?.goBack()}
+            activeOpacity={0.7}
+          >
+            <Feather name="arrow-left" size={20} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+
           <View style={styles.routeInputsCol}>
-            <TouchableOpacity
-              style={styles.routeInputItem}
-              activeOpacity={0.7}
-              onPress={() => setPickerTarget('origin')}
-            >
+            {/* Origin */}
+            <View style={styles.routeInputItem}>
               <View style={[styles.dotCircle, { backgroundColor: '#16A34A' }]} />
               <Text style={styles.routeLocationText} numberOfLines={1}>
-                {origin.name}
+                {MOCK_ROUTE.originName}
               </Text>
-              <Feather
-                name="chevron-down"
-                size={14}
-                color={colors.neutral.textMuted}
-              />
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.routeDivider} />
 
-            <TouchableOpacity
-              style={styles.routeInputItem}
-              activeOpacity={0.7}
-              onPress={() => setPickerTarget('destination')}
-            >
+            {/* Destination */}
+            <View style={styles.routeInputItem}>
               <View style={[styles.dotCircle, { backgroundColor: '#DC2626' }]} />
               <Text style={styles.routeLocationText} numberOfLines={1}>
-                {destination.name}
+                {MOCK_ROUTE.destinationName}
               </Text>
-              <Feather
-                name="chevron-down"
-                size={14}
-                color={colors.neutral.textMuted}
-              />
-            </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
             style={styles.swapBtn}
-            onPress={handleSwapRoute}
-            activeOpacity={0.7}
+            onPress={() => Alert.alert('Đảo chiều lộ trình', 'Đã chuyển chiều đi từ KTX về ĐH CNTT.')}
           >
             <Feather name="repeat" size={16} color={colors.primary[600]} />
           </TouchableOpacity>
         </View>
 
+        {/* Route Summary Pill */}
         <View style={styles.routeStatsRow}>
-          <Text style={styles.routeStatText}>
-            {loadingRoute
-              ? 'Đang tìm tuyến đường...'
-              : `Quãng đường ${totalDistanceKm} km • Khoảng ${estimatedDurationMins} phút`}
-          </Text>
+          <View style={styles.routeStatBadge}>
+            <Feather name="navigation" size={12} color={colors.primary[600]} />
+            <Text style={styles.routeStatText}>
+              Lộ trình {MOCK_ROUTE.totalDistanceKm} km • ~{MOCK_ROUTE.estimatedDurationMins} phút đi xe
+            </Text>
+          </View>
+
+          <View style={styles.algorithmBadge}>
+            <Text style={styles.algorithmBadgeText}>Thuật toán Point-to-Segment</Text>
+          </View>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterChipsRow}
-        >
+        {/* Quick Filter Switchers */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChipsRow}>
           <TouchableOpacity
-            style={[
-              styles.filterChip,
-              filterMode === 'matched' && styles.filterChipActive,
-            ]}
+            style={[styles.filterChip, filterMode === 'matched' && styles.filterChipActive]}
             onPress={() => setFilterMode('matched')}
           >
-            <Text
-              style={[
-                styles.filterChipText,
-                filterMode === 'matched' && styles.filterChipTextActive,
-              ]}
-            >
-              Tiện đường ({matchedTasks.length})
+            <Text style={styles.fireEmoji}>🔥</Text>
+            <Text style={[styles.filterChipText, filterMode === 'matched' && styles.filterChipTextActive]}>
+              Tiện đường (Lệch ≤ 300m)
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.filterChip,
-              filterMode === 'allTasks' && styles.filterChipActive,
-            ]}
+            style={[styles.filterChip, filterMode === 'allTasks' && styles.filterChipActive]}
             onPress={() => setFilterMode('allTasks')}
           >
-            <Text
-              style={[
-                styles.filterChipText,
-                filterMode === 'allTasks' && styles.filterChipTextActive,
-              ]}
-            >
-              Việc vặt ({allTaskMarkers.length})
+            <Feather name="zap" size={12} color={filterMode === 'allTasks' ? '#FFF' : colors.primary[600]} style={{ marginRight: 4 }} />
+            <Text style={[styles.filterChipText, filterMode === 'allTasks' && styles.filterChipTextActive]}>
+              Tất cả việc vặt
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.filterChip,
-              filterMode === 'allProducts' && styles.filterChipActive,
-            ]}
+            style={[styles.filterChip, filterMode === 'allProducts' && styles.filterChipActive]}
             onPress={() => setFilterMode('allProducts')}
           >
-            <Text
-              style={[
-                styles.filterChipText,
-                filterMode === 'allProducts' && styles.filterChipTextActive,
-              ]}
-            >
-              Chợ đồ cũ ({allProductMarkers.length})
+            <Feather name="shopping-bag" size={12} color={filterMode === 'allProducts' ? '#FFF' : colors.secondary[600]} style={{ marginRight: 4 }} />
+            <Text style={[styles.filterChipText, filterMode === 'allProducts' && styles.filterChipTextActive]}>
+              Chợ đồ cũ
             </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
+      {/* 2. MAP CANVAS AREA (Interactive Map View Simulation) */}
       <View style={styles.mapArea}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={{
-            latitude: 10.876,
-            longitude: 106.794,
-            latitudeDelta: 0.03,
-            longitudeDelta: 0.03,
-          }}
-          showsUserLocation
-          showsMyLocationButton={false}
-          onPress={() => setSelectedMarker(null)}
-        >
-          {routeCoords.length >= 2 && (
-            <Polyline
-              coordinates={routeCoords}
-              strokeColor={colors.primary[600]}
-              strokeWidth={5}
-            />
-          )}
+        {/* Background Grid Map pattern */}
+        <View style={styles.mapBackground}>
+          <View style={styles.mapGridRow} />
+          <View style={styles.mapGridRow} />
+          <View style={styles.mapGridRow} />
+          <View style={styles.mapRoadHorizontal1} />
+          <View style={styles.mapRoadHorizontal2} />
+          <View style={styles.mapRoadDiagonal} />
+          <View style={styles.mapParkArea}>
+            <Text style={styles.mapLabel}>Hồ Đá ĐHQG TP.HCM</Text>
+          </View>
+          <View style={styles.mapCampusArea}>
+            <Text style={styles.mapLabelCampus}>Khu đô thị ĐHQG</Text>
+          </View>
+        </View>
 
-          <Marker
-            coordinate={origin.coords}
-            tracksViewChanges={false}
-            onPress={() => setSelectedMarker(originMarkerItem)}
-          >
+        {/* Simulated Polyline Route Path */}
+        <View style={styles.polylineContainer}>
+          {/* Main Route Line */}
+          <View style={styles.polylineRoadMain} />
+          <View style={styles.polylineRoadCore} />
+        </View>
+
+        {/* Deviation dashed lines connecting tasks to main route */}
+        <View style={styles.deviationGuide1} />
+        <View style={styles.deviationGuide2} />
+
+        {/* Dynamic Markers on Map Canvas */}
+        {/* Origin: UIT */}
+        <View style={[styles.markerAbsolute, { top: '68%', left: '16%' }]}>
+          <MapMarker
+            item={MOCK_MARKERS[0]}
+            isSelected={selectedMarker?.id === 'origin'}
+            onPress={handleSelectMarker}
+          />
+        </View>
+
+        {/* Destination: KTX Khu B */}
+        <View style={[styles.markerAbsolute, { top: '18%', right: '18%' }]}>
+          <MapMarker
+            item={MOCK_MARKERS[1]}
+            isSelected={selectedMarker?.id === 'destination'}
+            onPress={handleSelectMarker}
+          />
+        </View>
+
+        {/* Task 1: Shopee KTX B */}
+        {displayedMarkers.some((m) => m.id === 'task-1') && (
+          <View style={[styles.markerAbsolute, { top: '27%', right: '28%' }]}>
             <MapMarker
-              item={originMarkerItem}
-              isSelected={selectedMarker?.id === 'origin'}
-              onPress={() => setSelectedMarker(originMarkerItem)}
+              item={MOCK_MARKERS[2]}
+              isSelected={selectedMarker?.id === 'task-1'}
+              onPress={handleSelectMarker}
             />
-          </Marker>
-
-          <Marker
-            coordinate={destination.coords}
-            tracksViewChanges={false}
-            onPress={() => setSelectedMarker(destinationMarkerItem)}
-          >
-            <MapMarker
-              item={destinationMarkerItem}
-              isSelected={selectedMarker?.id === 'destination'}
-              onPress={() => setSelectedMarker(destinationMarkerItem)}
-            />
-          </Marker>
-
-          {displayedMarkers.map((markerItem) => (
-            <Marker
-              key={`${markerItem.type}-${markerItem.id}`}
-              coordinate={{
-                latitude: markerItem.latitude,
-                longitude: markerItem.longitude,
-              }}
-              tracksViewChanges={false}
-              onPress={() => setSelectedMarker(markerItem)}
-            >
-              <MapMarker
-                item={markerItem}
-                isSelected={selectedMarker?.id === markerItem.id}
-                onPress={() => setSelectedMarker(markerItem)}
-              />
-            </Marker>
-          ))}
-        </MapView>
-
-        {loadingRoute && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="small" color={colors.primary[600]} />
-            <Text style={styles.loadingOverlayText}>Đang tải tuyến đường...</Text>
           </View>
         )}
 
-        {selectedMarker &&
-          selectedMarker.type !== 'origin' &&
-          selectedMarker.type !== 'destination' && (
-            <View style={styles.floatingPopupAnchor}>
-              <MarkerPopupCard
-                marker={selectedMarker}
-                onClose={() => setSelectedMarker(null)}
-                onViewDetail={handleViewDetail}
-                onQuickAction={handleQuickAction}
-              />
-            </View>
-          )}
+        {/* Task 2: Photo KHTN */}
+        {displayedMarkers.some((m) => m.id === 'task-2') && (
+          <View style={[styles.markerAbsolute, { top: '50%', left: '40%' }]}>
+            <MapMarker
+              item={MOCK_MARKERS[3]}
+              isSelected={selectedMarker?.id === 'task-2'}
+              onPress={handleSelectMarker}
+            />
+          </View>
+        )}
 
+        {/* Task 3: Cơm gà ngã 3 621 */}
+        {displayedMarkers.some((m) => m.id === 'task-3') && (
+          <View style={[styles.markerAbsolute, { top: '38%', left: '52%' }]}>
+            <MapMarker
+              item={MOCK_MARKERS[4]}
+              isSelected={selectedMarker?.id === 'task-3'}
+              onPress={handleSelectMarker}
+            />
+          </View>
+        )}
+
+        {/* Product 1: Sách */}
+        {displayedMarkers.some((m) => m.id === 'prod-1') && (
+          <View style={[styles.markerAbsolute, { top: '22%', right: '45%' }]}>
+            <MapMarker
+              item={MOCK_MARKERS[5]}
+              isSelected={selectedMarker?.id === 'prod-1'}
+              onPress={handleSelectMarker}
+            />
+          </View>
+        )}
+
+        {/* 3. POPUP MARKER CARD (CALLOUT OVERLAY) */}
+        {selectedMarker && selectedMarker.type !== 'origin' && selectedMarker.type !== 'destination' && (
+          <View style={styles.floatingPopupAnchor}>
+            <MarkerPopupCard
+              marker={selectedMarker}
+              onClose={() => setSelectedMarker(null)}
+              onViewDetail={handleViewDetail}
+              onQuickAction={handleQuickAction}
+            />
+          </View>
+        )}
+
+        {/* Floating Map Controls */}
         <View style={styles.mapControlsCol}>
           <TouchableOpacity
             style={styles.mapControlBtn}
-            onPress={handleLocateMe}
+            onPress={() => Alert.alert('Định vị', 'Đang cập nhật vị trí hiện tại của bạn.')}
           >
             <Feather name="crosshair" size={18} color={colors.primary[600]} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.mapControlBtn}
-            onPress={() => fitMapToRoute(routeCoords)}
+            onPress={() => setSelectedMarker(MOCK_MARKERS[2])}
           >
-            <Feather
-              name="maximize-2"
-              size={18}
-              color={colors.neutral.textPrimary}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.mapControlBtn}
-            onPress={loadRouteAndMatches}
-          >
-            <Feather name="refresh-cw" size={16} color={colors.primary[600]} />
+            <Feather name="maximize-2" size={18} color={colors.neutral.textPrimary} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <View
-        style={[
-          styles.bottomSheet,
-          sheetExpanded && styles.bottomSheetExpanded,
-        ]}
-      >
+      {/* 4. DRAGGABLE / EXPANDABLE BOTTOM SHEET */}
+      <View style={[styles.bottomSheet, sheetExpanded && styles.bottomSheetExpanded]}>
+        {/* Drag handle */}
         <TouchableOpacity
           style={styles.sheetHandleWrap}
           activeOpacity={0.7}
@@ -445,14 +401,16 @@ export default function RouteMatchingScreen({ navigation }: any) {
           <View style={styles.sheetHandleBar} />
         </TouchableOpacity>
 
+        {/* Sheet Header */}
         <View style={styles.sheetHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sheetTitle}>
-              {matchedTasks.length} việc tiện đường
-            </Text>
+          <View>
+            <View style={styles.sheetTitleRow}>
+              <Text style={styles.sheetTitle}>
+                🔥 {matchedTasks.length} việc tiện đường đi của bạn
+              </Text>
+            </View>
             <Text style={styles.sheetSubtitle}>
-              Trong phạm vi {MAX_DEVIATION_METERS}m dọc tuyến • Tổng thù lao +
-              {new Intl.NumberFormat('vi-VN').format(totalExtraBounty)} đ
+              Lệch tối đa 300m • Kiếm thêm +{new Intl.NumberFormat('vi-VN').format(totalExtraBounty)} đ
             </Text>
           </View>
 
@@ -468,133 +426,61 @@ export default function RouteMatchingScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        {/* Matched Tasks List */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           style={styles.sheetScrollList}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
         >
-          {matchedTasks.length === 0 ? (
-            <View style={styles.emptySheetBox}>
-              <Text style={styles.emptySheetText}>
-                Chưa có việc vặt nào nằm dọc theo tuyến đường này.
-              </Text>
-            </View>
-          ) : (
-            matchedTasks.map((taskItem) => {
-              const isSelected = selectedMarker?.id === taskItem.id;
-              return (
-                <TouchableOpacity
-                  key={taskItem.id}
-                  style={[
-                    styles.taskItemCard,
-                    isSelected && styles.taskItemCardActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedMarker(taskItem);
-                    mapRef.current?.animateToRegion(
-                      {
-                        latitude: taskItem.latitude,
-                        longitude: taskItem.longitude,
-                        latitudeDelta: 0.012,
-                        longitudeDelta: 0.012,
-                      },
-                      350
-                    );
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.taskItemTextCol}>
-                    <Text style={styles.taskItemTitle} numberOfLines={1}>
-                      {taskItem.title}
-                    </Text>
-                    <View style={styles.taskItemMetaRow}>
-                      <View style={styles.deviationTag}>
-                        <Text style={styles.deviationTagText}>
-                          Lệch {taskItem.deviationMeters}m
-                        </Text>
-                      </View>
-                      <Text style={styles.taskItemAddress} numberOfLines={1}>
-                        {taskItem.address}
+          {matchedTasks.map((taskItem) => {
+            const isSelected = selectedMarker?.id === taskItem.id;
+            return (
+              <TouchableOpacity
+                key={taskItem.id}
+                style={[styles.taskItemCard, isSelected && styles.taskItemCardActive]}
+                onPress={() => setSelectedMarker(taskItem)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.taskItemIconBox}>
+                  <Feather
+                    name={taskItem.category === 'food' ? 'coffee' : taskItem.category === 'print' ? 'file-text' : 'package'}
+                    size={18}
+                    color={colors.primary[600]}
+                  />
+                </View>
+
+                <View style={styles.taskItemTextCol}>
+                  <Text style={styles.taskItemTitle} numberOfLines={1}>
+                    {taskItem.title}
+                  </Text>
+                  <View style={styles.taskItemMetaRow}>
+                    <View style={styles.deviationTag}>
+                      <Text style={styles.deviationTagText}>
+                        Lệch {taskItem.deviationMeters}m
                       </Text>
                     </View>
-                  </View>
-
-                  <View style={styles.taskItemPriceCol}>
-                    <Text style={styles.taskItemPrice}>
-                      +{new Intl.NumberFormat('vi-VN').format(taskItem.bountyOrPrice || 0)}đ
+                    <Text style={styles.taskItemAddress} numberOfLines={1}>
+                      • {taskItem.address}
                     </Text>
-                    <TouchableOpacity
-                      style={styles.quickAcceptBtn}
-                      onPress={() => handleQuickAction(taskItem)}
-                    >
-                      <Text style={styles.quickAcceptBtnText}>Nhắn tin</Text>
-                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
+                </View>
+
+                <View style={styles.taskItemPriceCol}>
+                  <Text style={styles.taskItemPrice}>
+                    +{new Intl.NumberFormat('vi-VN').format(taskItem.bountyOrPrice || 0)}đ
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.quickAcceptBtn}
+                    onPress={() => handleQuickAction(taskItem)}
+                  >
+                    <Text style={styles.quickAcceptBtnText}>Nhận</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
-
-      <Modal
-        visible={pickerTarget !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerTarget(null)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setPickerTarget(null)}
-        >
-          <View style={styles.pickerSheet}>
-            <Text style={styles.pickerTitle}>
-              {pickerTarget === 'origin'
-                ? 'Chọn điểm xuất phát'
-                : 'Chọn điểm đến'}
-            </Text>
-
-            {pickerTarget === 'origin' && (
-              <TouchableOpacity
-                style={styles.presetRow}
-                onPress={async () => {
-                  setPickerTarget(null);
-                  await handleLocateMe();
-                }}
-              >
-                <Feather name="crosshair" size={18} color={colors.primary[600]} />
-                <View style={styles.presetTextCol}>
-                  <Text style={styles.presetName}>Vị trí hiện tại (GPS)</Text>
-                  <Text style={styles.presetAddress}>
-                    Lấy tọa độ trực tiếp từ điện thoại
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
-            {CAMPUS_PRESETS.map((preset) => (
-              <TouchableOpacity
-                key={preset.id}
-                style={styles.presetRow}
-                onPress={() => handleSelectPreset(preset)}
-              >
-                <Feather
-                  name="map-pin"
-                  size={18}
-                  color={
-                    pickerTarget === 'origin' ? '#16A34A' : '#DC2626'
-                  }
-                />
-                <View style={styles.presetTextCol}>
-                  <Text style={styles.presetName}>{preset.name}</Text>
-                  <Text style={styles.presetAddress}>{preset.address}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -602,7 +488,7 @@ export default function RouteMatchingScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.neutral.background,
+    backgroundColor: '#E2E8F0',
   },
   routeHeaderBox: {
     backgroundColor: colors.neutral.surface,
@@ -618,6 +504,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.neutral.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[2],
+  },
   routeInputsCol: {
     flex: 1,
     backgroundColor: colors.neutral.background,
@@ -630,7 +525,6 @@ const styles = StyleSheet.create({
   routeInputItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 2,
   },
   dotCircle: {
     width: 10,
@@ -662,12 +556,29 @@ const styles = StyleSheet.create({
   routeStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: spacing[2],
   },
+  routeStatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   routeStatText: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.neutral.textSecondary,
     fontWeight: typography.fontWeight.medium,
+  },
+  algorithmBadge: {
+    backgroundColor: colors.primary[50],
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.md,
+  },
+  algorithmBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.primary[700],
   },
   filterChipsRow: {
     flexDirection: 'row',
@@ -677,7 +588,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing[3],
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
     backgroundColor: colors.neutral.background,
     borderWidth: 1,
@@ -688,8 +599,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
     borderColor: colors.primary[600],
   },
+  fireEmoji: {
+    fontSize: 11,
+    marginRight: 4,
+  },
   filterChipText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: typography.fontWeight.medium,
     color: colors.neutral.textSecondary,
   },
@@ -701,32 +616,137 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
     overflow: 'hidden',
+    backgroundColor: '#E5E7EB',
   },
-  loadingOverlay: {
+  mapBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#E2E8F0',
+  },
+  mapGridRow: {
+    height: 120,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+    opacity: 0.5,
+  },
+  mapRoadHorizontal1: {
     position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.neutral.surface,
-    paddingHorizontal: spacing[3],
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    gap: 8,
-    zIndex: 50,
-    ...shadows.md,
+    top: '32%',
+    left: 0,
+    right: 0,
+    height: 18,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#CBD5E1',
   },
-  loadingOverlayText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.neutral.textPrimary,
+  mapRoadHorizontal2: {
+    position: 'absolute',
+    top: '65%',
+    left: 0,
+    right: 0,
+    height: 24,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  mapRoadDiagonal: {
+    position: 'absolute',
+    top: '15%',
+    left: '10%',
+    width: '85%',
+    height: 20,
+    backgroundColor: '#FFFFFF',
+    transform: [{ rotate: '-28deg' }],
+    borderColor: '#CBD5E1',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  mapParkArea: {
+    position: 'absolute',
+    top: '40%',
+    left: '8%',
+    width: 140,
+    height: 90,
+    backgroundColor: '#BAE6FD',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#7DD3FC',
+  },
+  mapCampusArea: {
+    position: 'absolute',
+    top: '12%',
+    left: '45%',
+    width: 150,
+    height: 60,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapLabel: {
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+    color: '#0369A1',
+  },
+  mapLabelCampus: {
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+    color: '#15803D',
+  },
+  polylineContainer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  polylineRoadMain: {
+    position: 'absolute',
+    top: '22%',
+    left: '20%',
+    width: '68%',
+    height: 10,
+    backgroundColor: 'rgba(37, 99, 235, 0.4)',
+    borderRadius: 5,
+    transform: [{ rotate: '-28deg' }],
+  },
+  polylineRoadCore: {
+    position: 'absolute',
+    top: '22%',
+    left: '20%',
+    width: '68%',
+    height: 6,
+    backgroundColor: colors.primary[600],
+    borderRadius: 3,
+    transform: [{ rotate: '-28deg' }],
+  },
+  deviationGuide1: {
+    position: 'absolute',
+    top: '32%',
+    right: '32%',
+    width: 28,
+    height: 2,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.semantic.warning.DEFAULT,
+  },
+  deviationGuide2: {
+    position: 'absolute',
+    top: '52%',
+    left: '42%',
+    width: 24,
+    height: 2,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.semantic.warning.DEFAULT,
+  },
+  markerAbsolute: {
+    position: 'absolute',
   },
   floatingPopupAnchor: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 20,
     alignSelf: 'center',
-    zIndex: 100,
-    elevation: 10,
+    zIndex: 90,
   },
   mapControlsCol: {
     position: 'absolute',
@@ -748,13 +768,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral.surface,
     borderTopLeftRadius: borderRadius['2xl'],
     borderTopRightRadius: borderRadius['2xl'],
-    maxHeight: 240,
+    maxHeight: 280,
     paddingHorizontal: spacing[4],
     ...shadows.bottomSheet,
     zIndex: 80,
   },
   bottomSheetExpanded: {
-    maxHeight: 420,
+    maxHeight: 460,
   },
   sheetHandleWrap: {
     alignItems: 'center',
@@ -774,6 +794,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.neutral.divider,
   },
+  sheetTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   sheetTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
@@ -790,15 +814,6 @@ const styles = StyleSheet.create({
   sheetScrollList: {
     marginTop: spacing[2],
   },
-  emptySheetBox: {
-    paddingVertical: spacing[5],
-    alignItems: 'center',
-  },
-  emptySheetText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.neutral.textMuted,
-    textAlign: 'center',
-  },
   taskItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -813,6 +828,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[50],
     borderColor: colors.primary[500],
   },
+  taskItemIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[3],
+  },
   taskItemTextCol: {
     flex: 1,
   },
@@ -820,17 +844,16 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.bold,
     color: colors.neutral.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   taskItemMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
   deviationTag: {
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     borderRadius: 4,
   },
   deviationTagText: {
@@ -839,9 +862,10 @@ const styles = StyleSheet.create({
     color: '#B45309',
   },
   taskItemAddress: {
-    fontSize: 11,
+    fontSize: 10,
     color: colors.neutral.textMuted,
     flex: 1,
+    marginLeft: 4,
   },
   taskItemPriceCol: {
     alignItems: 'flex-end',
@@ -863,44 +887,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: typography.fontWeight.bold,
     color: '#FFFFFF',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  pickerSheet: {
-    backgroundColor: colors.neutral.surface,
-    borderTopLeftRadius: borderRadius['2xl'],
-    borderTopRightRadius: borderRadius['2xl'],
-    padding: spacing[5],
-    paddingBottom: spacing[8],
-  },
-  pickerTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.neutral.textPrimary,
-    marginBottom: spacing[3],
-  },
-  presetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing[3],
-    borderBottomWidth: 1,
-    borderBottomColor: colors.neutral.divider,
-    gap: spacing[3],
-  },
-  presetTextCol: {
-    flex: 1,
-  },
-  presetName: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.neutral.textPrimary,
-  },
-  presetAddress: {
-    fontSize: typography.fontSize.xs,
-    color: colors.neutral.textMuted,
-    marginTop: 1,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,101 +7,175 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { User, Review } from '../types';
+import { Product, Task } from '../types';
 import { ReviewItem } from '../components/ReviewItem';
+import { useAuthStore } from '../store/useAuthStore';
+import { useAuth } from '../features/auth/hooks/useAuth';
+import { useUserTasks } from '../features/tasks/hooks/useTasks';
+import { useUserProducts } from '../features/market/hooks/useProducts';
+import { useUserProfile, useUserReviews } from '../features/reviews/hooks/useReviews';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
-
-const CURRENT_USER: User = {
-  uid: 'u_khoi',
-  email: 'khoi.nm@uit.edu.vn',
-  displayName: 'Nguyễn Minh Khôi',
-  avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
-  bio: 'Sinh viên K17 ngành Kỹ thuật Phần mềm ĐH CNTT (UIT). Thường xuyên đi tuyến UIT ➔ KTX Khu B lúc 17h, nhận tiện đường lấy hộ hàng Shopee và in ấn tài liệu!',
-  phone: '0987654321',
-  role: 'user',
-  status: 'active',
-  trustScore: 4.9,
-  totalReviews: 32,
-  createdAt: Date.now() - 120 * 24 * 60 * 60 * 1000,
-  university: 'ĐH Công Nghệ Thông Tin (UIT) - ĐHQG TP.HCM',
-  studentIdVerified: true,
-  completedTasksCount: 14,
-  postedTasksCount: 8,
-  activeProductsCount: 3,
-};
-
-const MOCK_REVIEWS: Review[] = [
-  {
-    reviewId: 'r1',
-    reviewerId: 'u1',
-    reviewerName: 'Trần Thị Mai (ĐH KHTN)',
-    reviewerAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
-    targetUserId: 'u_khoi',
-    rating: 5,
-    comment: 'Khôi nhận lấy hộ giáo trình và giao tận sảnh KTX cực kỳ đúng giờ, nói chuyện rất lịch sự và nhiệt tình. 10/10 uy tín!',
-    tags: ['Đúng giờ', 'Thân thiện', 'Cẩn thận'],
-    relatedType: 'task',
-    relatedTitle: 'In & bấm ghim tài liệu Giải tích 1',
-    createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
-  },
-  {
-    reviewId: 'r2',
-    reviewerId: 'u2',
-    reviewerName: 'Lê Hoàng Long (ĐH Bách Khoa)',
-    reviewerAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200&q=80',
-    targetUserId: 'u_khoi',
-    rating: 5,
-    comment: 'Giao hàng Shopee giúp mình lúc trời mưa mà gói hàng vẫn khô ráo nguyên vẹn, cảm ơn bạn rất nhiều nhé.',
-    tags: ['Cẩn thận giữ đồ', 'Giao nhanh chóng', 'Nhiệt tình'],
-    relatedType: 'task',
-    relatedTitle: 'Nhận hộ gói đồ Shopee Cổng 1 KTX B',
-    createdAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
-  },
-  {
-    reviewId: 'r3',
-    reviewerId: 'u3',
-    reviewerName: 'Vũ Thị Ngọc (ĐH KHXH&NV)',
-    reviewerAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&q=80',
-    targetUserId: 'u_khoi',
-    rating: 5,
-    comment: 'Mua sách Giải tích của bạn này, sách còn rất mới và sạch đẹp, có highlight sẵn công thức thi rất có tâm.',
-    tags: ['Đồ dùng như mô tả', 'Nhiệt tình hỗ trợ'],
-    relatedType: 'product',
-    relatedTitle: 'Giáo trình Giải tích 1 & ĐSTT',
-    createdAt: Date.now() - 12 * 24 * 60 * 60 * 1000,
-  },
-  {
-    reviewId: 'r4',
-    reviewerId: 'u4',
-    reviewerName: 'Phạm Đức Duy (ĐH Quốc Tế)',
-    reviewerAvatar: null,
-    targetUserId: 'u_khoi',
-    rating: 4,
-    comment: 'Giao đồ ăn nhanh, đồ ăn còn nóng hổi. Rất hài lòng.',
-    tags: ['Đúng giờ', 'Thân thiện'],
-    relatedType: 'task',
-    relatedTitle: 'Mua hộ 2 phần cơm gà xối mỡ',
-    createdAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-  },
-];
 
 type ProfileTab = 'reviews' | 'history' | 'myItems';
 
-export default function ProfileScreen({ navigation }: any) {
+export default function ProfileScreen({ route, navigation }: any) {
+  const authUser = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  const { handleLogout } = useAuth();
+
+  const paramUserId: string | undefined = route?.params?.userId;
+  const targetUid = paramUserId || authUser?.uid;
+  const isOwnProfile = !paramUserId || paramUserId === authUser?.uid;
+
+  const { profile: liveProfile, loading: loadingProfile } = useUserProfile(targetUid);
+  const { reviews, loading: loadingReviews } = useUserReviews(targetUid);
+  const { tasks: userTasks, loading: loadingTasks } = useUserTasks(targetUid);
+  const { products: userProducts, loading: loadingProducts } = useUserProducts(targetUid);
+
   const [activeTab, setActiveTab] = useState<ProfileTab>('reviews');
   const [selectedTagFilter, setSelectedTagFilter] = useState('all');
 
-  const reviewFilterTags = ['all', 'Đúng giờ', 'Thân thiện', 'Cẩn thận giữ đồ', 'Giao nhanh'];
+  useEffect(() => {
+    if (isOwnProfile && liveProfile) {
+      const changed =
+        !authUser ||
+        authUser.trustScore !== liveProfile.trustScore ||
+        authUser.totalReviews !== liveProfile.totalReviews ||
+        authUser.displayName !== liveProfile.displayName ||
+        authUser.avatarUrl !== liveProfile.avatarUrl ||
+        authUser.bio !== liveProfile.bio;
 
-  const filteredReviews = MOCK_REVIEWS.filter((r) => {
-    if (selectedTagFilter === 'all') return true;
-    return r.tags?.some((t) => t.toLowerCase().includes(selectedTagFilter.toLowerCase()));
-  });
+      if (changed) {
+        setUser(liveProfile);
+      }
+    }
+  }, [isOwnProfile, liveProfile, authUser, setUser]);
 
-  const handleLogout = () => {
+  const profileUser = isOwnProfile ? liveProfile || authUser : liveProfile;
+
+  const reviewFilterTags = ['all', 'Đúng giờ', 'Thân thiện', 'Cẩn thận', 'Giao nhanh'];
+
+  const filteredReviews = useMemo(() => {
+    return reviews.filter((r) => {
+      if (selectedTagFilter === 'all') return true;
+      return r.tags?.some((t) =>
+        t.toLowerCase().includes(selectedTagFilter.toLowerCase())
+      );
+    });
+  }, [reviews, selectedTagFilter]);
+
+  const stats = useMemo(() => {
+    const acceptedTasks = userTasks.filter((t) => t.workerId === targetUid);
+    const postedTasks = userTasks.filter((t) => t.requesterId === targetUid);
+    const completedAccepted = acceptedTasks.filter((t) => t.status === 'completed');
+    const completedTotal = userTasks.filter((t) => t.status === 'completed').length;
+    const totalEarned = completedAccepted.reduce((sum, t) => sum + (t.bounty || 0), 0);
+    const activeProducts = userProducts.filter((p) => p.status === 'available');
+
+    const nonOpenTasks = userTasks.filter((t) => t.status !== 'open');
+    const completionRate =
+      nonOpenTasks.length > 0
+        ? `${Math.round((completedTotal / nonOpenTasks.length) * 100)}%`
+        : '—';
+
+    const positiveReviews = reviews.filter((r) => r.rating >= 4).length;
+    const satisfactionRate =
+      reviews.length > 0
+        ? `${Math.round((positiveReviews / reviews.length) * 100)}%`
+        : '—';
+
+    return {
+      acceptedCount: acceptedTasks.length,
+      postedCount: postedTasks.length,
+      completedCount: completedTotal,
+      totalEarned,
+      activeProductsCount: activeProducts.length,
+      completionRate,
+      satisfactionRate,
+    };
+  }, [userTasks, userProducts, reviews, targetUid]);
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
+
+  const getTaskStatusMeta = (status: Task['status']) => {
+    switch (status) {
+      case 'open':
+        return { label: 'Đang mở', bg: colors.primary[50], text: colors.primary[700] };
+      case 'matched':
+        return { label: 'Đang thực hiện', bg: colors.semantic.warning.light, text: colors.semantic.warning.text };
+      case 'completed':
+        return { label: 'Hoàn thành', bg: colors.semantic.success.light, text: colors.semantic.success.text };
+      case 'cancelled':
+        return { label: 'Đã hủy', bg: colors.semantic.danger.light, text: colors.semantic.danger.text };
+      default:
+        return { label: 'Đã ẩn', bg: '#F1F5F9', text: colors.neutral.textMuted };
+    }
+  };
+
+  const getProductStatusMeta = (status: Product['status']) => {
+    switch (status) {
+      case 'available':
+        return { label: 'Đang bán', bg: colors.semantic.success.light, text: colors.semantic.success.text };
+      case 'sold':
+        return { label: 'Đã bán', bg: '#F1F5F9', text: colors.neutral.textSecondary };
+      default:
+        return { label: 'Đã ẩn', bg: colors.semantic.danger.light, text: colors.semantic.danger.text };
+    }
+  };
+
+  const handleOpenReviewForTask = (task: Task) => {
+    if (!authUser?.uid) return;
+    const isRequester = task.requesterId === authUser.uid;
+    const partnerId = isRequester ? task.workerId : task.requesterId;
+    const partnerName = isRequester
+      ? task.workerName || 'Người nhận việc'
+      : task.requesterName;
+    const partnerAvatar = isRequester ? null : task.requesterAvatar ?? null;
+
+    if (!partnerId) {
+      Alert.alert('Thông báo', 'Không tìm thấy đối tác để đánh giá cho công việc này.');
+      return;
+    }
+
+    navigation?.navigate('ReviewRating', {
+      targetUserId: partnerId,
+      targetUserName: partnerName,
+      targetUserAvatar: partnerAvatar,
+      relatedType: 'task',
+      relatedId: task.taskId,
+      relatedTitle: task.title,
+    });
+  };
+
+  const performLogout = async () => {
+    await handleLogout();
+    if (navigation?.replace) {
+      navigation.replace('Login');
+    } else {
+      navigation?.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    }
+  };
+
+  const onLogoutPress = () => {
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' &&
+        window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản UniShare?');
+      if (confirmed) {
+        performLogout();
+      }
+      return;
+    }
+
     Alert.alert(
       'Đăng xuất',
       'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản UniShare?',
@@ -110,16 +184,63 @@ export default function ProfileScreen({ navigation }: any) {
         {
           text: 'Đăng xuất',
           style: 'destructive',
-          onPress: () => {
-            navigation?.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            });
-          },
+          onPress: performLogout,
         },
       ]
     );
   };
+
+  if (!targetUid) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={20} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Hồ sơ cá nhân & Uy tín</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={styles.centerState}>
+          <Feather name="user" size={48} color={colors.neutral.disabled} />
+          <Text style={styles.emptyTabTitle}>Bạn chưa đăng nhập</Text>
+          <Text style={styles.emptyTabSub}>
+            Vui lòng đăng nhập tài khoản sinh viên để xem hồ sơ và lịch sử hoạt động.
+          </Text>
+          <TouchableOpacity
+            style={styles.loginPromptBtn}
+            onPress={() => navigation?.replace ? navigation.replace('Login') : navigation?.navigate('Login')}
+          >
+            <Text style={styles.loginPromptBtnText}>Đăng nhập ngay</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadingProfile && !profileUser) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation?.goBack()}>
+            <Feather name="arrow-left" size={20} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Hồ sơ cá nhân & Uy tín</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={colors.primary[600]} />
+          <Text style={styles.emptyTabSub}>Đang tải hồ sơ người dùng...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const displayName = profileUser?.displayName || profileUser?.email || 'Sinh viên UniShare';
+  const email = profileUser?.email || '';
+  const avatarInitial = displayName.trim().charAt(0).toUpperCase() || 'U';
+  const trustScore = typeof profileUser?.trustScore === 'number' ? profileUser.trustScore : 0;
+  const totalReviews =
+    typeof profileUser?.totalReviews === 'number' ? profileUser.totalReviews : reviews.length;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -133,22 +254,35 @@ export default function ProfileScreen({ navigation }: any) {
           <Feather name="arrow-left" size={20} color={colors.neutral.textPrimary} />
         </TouchableOpacity>
 
-        <Text style={styles.topBarTitle}>Hồ sơ cá nhân & Uy tín</Text>
+        <Text style={styles.topBarTitle}>
+          {isOwnProfile ? 'Hồ sơ cá nhân & Uy tín' : 'Hồ sơ thành viên'}
+        </Text>
 
-        <View style={styles.topActions}>
-          <TouchableOpacity
-            style={[styles.iconBtn, { marginRight: 8 }]}
-            onPress={() => Alert.alert('Chỉnh sửa hồ sơ', 'Tính năng cập nhật ảnh đại diện, số điện thoại và giới thiệu bản thân.')}
-          >
-            <Feather name="edit-2" size={18} color={colors.neutral.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() => Alert.alert('Cài đặt', 'Cài đặt thông báo, quyền riêng tư và tài khoản.')}
-          >
-            <Feather name="settings" size={18} color={colors.neutral.textPrimary} />
-          </TouchableOpacity>
-        </View>
+        {isOwnProfile ? (
+          <View style={styles.topActions}>
+            <TouchableOpacity
+              style={[styles.iconBtn, { marginRight: 8 }]}
+              onPress={() =>
+                Alert.alert(
+                  'Chỉnh sửa hồ sơ',
+                  'Tính năng cập nhật ảnh đại diện, số điện thoại và giới thiệu bản thân.'
+                )
+              }
+            >
+              <Feather name="edit-2" size={18} color={colors.neutral.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() =>
+                Alert.alert('Cài đặt', 'Cài đặt thông báo, quyền riêng tư và tài khoản.')
+              }
+            >
+              <Feather name="settings" size={18} color={colors.neutral.textPrimary} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ width: 36 }} />
+        )}
       </View>
 
       <ScrollView
@@ -159,56 +293,62 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={styles.profileHeroCard}>
           <View style={styles.profileRow}>
             <View style={styles.avatarContainer}>
-              <Image source={{ uri: CURRENT_USER.avatarUrl! }} style={styles.avatarImg} />
-              <View style={styles.cameraBadge}>
-                <Feather name="camera" size={12} color="#FFFFFF" />
-              </View>
+              {profileUser?.avatarUrl ? (
+                <Image source={{ uri: profileUser.avatarUrl }} style={styles.avatarImg} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarFallbackText}>{avatarInitial}</Text>
+                </View>
+              )}
+              {isOwnProfile && (
+                <View style={styles.cameraBadge}>
+                  <Feather name="camera" size={12} color="#FFFFFF" />
+                </View>
+              )}
             </View>
 
             <View style={styles.userMainInfo}>
               <View style={styles.userNameLine}>
-                <Text style={styles.displayName}>{CURRENT_USER.displayName}</Text>
+                <Text style={styles.displayName}>{displayName}</Text>
               </View>
 
-              <Text style={styles.emailText}>{CURRENT_USER.email}</Text>
+              {email ? <Text style={styles.emailText}>{email}</Text> : null}
 
               {/* Edu Verified Badge */}
               <View style={styles.eduVerifiedBadge}>
                 <Feather name="shield" size={12} color="#2563EB" style={{ marginRight: 4 }} />
-                <Text style={styles.eduVerifiedText}>Đã xác thực Email SV (.edu.vn)</Text>
+                <Text style={styles.eduVerifiedText}>
+                  {email.endsWith('.edu.vn') || profileUser?.studentIdVerified
+                    ? 'Đã xác thực Email SV (.edu.vn)'
+                    : 'Thành viên UniShare'}
+                </Text>
               </View>
             </View>
           </View>
 
           {/* Campus Tag */}
-          <View style={styles.campusInfoBox}>
-            <Feather name="book" size={14} color={colors.primary[600]} style={{ marginTop: 1 }} />
-            <Text style={styles.campusText}>{CURRENT_USER.university}</Text>
-          </View>
+          {profileUser?.university ? (
+            <View style={styles.campusInfoBox}>
+              <Feather name="book" size={14} color={colors.primary[600]} style={{ marginTop: 1 }} />
+              <Text style={styles.campusText}>{profileUser.university}</Text>
+            </View>
+          ) : null}
 
           {/* Bio */}
-          <Text style={styles.bioText}>{CURRENT_USER.bio}</Text>
+          <Text style={styles.bioText}>
+            {profileUser?.bio?.trim()
+              ? profileUser.bio
+              : 'Chưa có giới thiệu bản thân.'}
+          </Text>
         </View>
 
-        {/* 3. TRUST SCORE CARD (ĐẶC TẢ TRỌNG TÂM) */}
+        {/* 3. TRUST SCORE CARD */}
         <View style={styles.trustScoreCard}>
           <View style={styles.trustHeader}>
-            <View>
+            <View style={styles.trustHeaderTextCol}>
               <Text style={styles.trustTitle}>ĐIỂM UY TÍN SINH VIÊN (TRUST SCORE)</Text>
               <Text style={styles.trustSubtitle}>Đánh giá thực tế từ bạn học sau giao dịch</Text>
             </View>
-            <TouchableOpacity
-              style={styles.simulateReviewBtn}
-              onPress={() =>
-                navigation?.navigate('ReviewRating', {
-                  targetUserName: 'Nguyễn Văn An',
-                  relatedTitle: 'Nhận hộ gói đồ Shopee KTX B',
-                })
-              }
-            >
-              <Feather name="edit-3" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text style={styles.simulateReviewBtnText}>Đánh giá đối tác</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.trustScoreMainRow}>
@@ -216,28 +356,28 @@ export default function ProfileScreen({ navigation }: any) {
             <View style={styles.bigScoreBox}>
               <View style={styles.bigScoreRow}>
                 <Feather name="star" size={26} color="#F59E0B" />
-                <Text style={styles.bigScoreNumber}>{CURRENT_USER.trustScore.toFixed(1)}</Text>
+                <Text style={styles.bigScoreNumber}>{trustScore.toFixed(1)}</Text>
                 <Text style={styles.bigScoreMax}>/5.0</Text>
               </View>
               <Text style={styles.reviewCountText}>
-                {CURRENT_USER.totalReviews} lượt đánh giá uy tín
+                {totalReviews} lượt đánh giá uy tín
               </Text>
             </View>
 
             {/* Quick Metrics */}
             <View style={styles.metricsBox}>
               <View style={styles.metricItem}>
-                <Text style={styles.metricVal}>98%</Text>
+                <Text style={styles.metricVal}>{stats.completionRate}</Text>
                 <Text style={styles.metricLab}>Hoàn tất việc</Text>
               </View>
               <View style={styles.metricDivider} />
               <View style={styles.metricItem}>
-                <Text style={styles.metricVal}>&lt; 5p</Text>
-                <Text style={styles.metricLab}>Phản hồi chat</Text>
+                <Text style={styles.metricVal}>{stats.completedCount}</Text>
+                <Text style={styles.metricLab}>Việc xong</Text>
               </View>
               <View style={styles.metricDivider} />
               <View style={styles.metricItem}>
-                <Text style={styles.metricVal}>100%</Text>
+                <Text style={styles.metricVal}>{stats.satisfactionRate}</Text>
                 <Text style={styles.metricLab}>Hài lòng</Text>
               </View>
             </View>
@@ -247,15 +387,17 @@ export default function ProfileScreen({ navigation }: any) {
           <View style={styles.badgesRow}>
             <View style={styles.honorBadge}>
               <Text style={styles.honorEmoji}>🛡️</Text>
-              <Text style={styles.honorText}>Sinh viên uy tín</Text>
+              <Text style={styles.honorText}>
+                {trustScore >= 4.5 ? 'Sinh viên uy tín' : 'Tài khoản xác thực'}
+              </Text>
             </View>
             <View style={styles.honorBadge}>
-              <Text style={styles.honorEmoji}>🛵</Text>
-              <Text style={styles.honorText}>Đúng giờ 100%</Text>
+              <Text style={styles.honorEmoji}>⚡</Text>
+              <Text style={styles.honorText}>{stats.acceptedCount} việc đã nhận</Text>
             </View>
             <View style={styles.honorBadge}>
               <Text style={styles.honorEmoji}>🤝</Text>
-              <Text style={styles.honorText}>Thân thiện</Text>
+              <Text style={styles.honorText}>{totalReviews} đánh giá</Text>
             </View>
           </View>
         </View>
@@ -263,29 +405,31 @@ export default function ProfileScreen({ navigation }: any) {
         {/* 4. ACTIVITY SUMMARY CARDS */}
         <View style={styles.statsSummaryRow}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryNumber}>{CURRENT_USER.completedTasksCount}</Text>
+            <Text style={styles.summaryNumber}>{stats.acceptedCount}</Text>
             <Text style={styles.summaryLabel}>Việc đã nhận</Text>
-            <Text style={styles.summarySub}>Thu nhập ~420k</Text>
+            <Text style={styles.summarySub}>
+              {stats.totalEarned > 0 ? `+${formatCurrency(stats.totalEarned)}` : 'Chưa có thu nhập'}
+            </Text>
           </View>
 
           <View style={styles.summaryCard}>
             <Text style={[styles.summaryNumber, { color: colors.primary[600] }]}>
-              {CURRENT_USER.postedTasksCount}
+              {stats.postedCount}
             </Text>
             <Text style={styles.summaryLabel}>Việc đã đăng</Text>
-            <Text style={styles.summarySub}>Đã hoàn thành</Text>
+            <Text style={styles.summarySub}>{stats.completedCount} đã xong</Text>
           </View>
 
           <View style={styles.summaryCard}>
             <Text style={[styles.summaryNumber, { color: '#EA580C' }]}>
-              {CURRENT_USER.activeProductsCount}
+              {stats.activeProductsCount}
             </Text>
             <Text style={styles.summaryLabel}>Đồ đang pass</Text>
-            <Text style={styles.summarySub}>Chợ đồ cũ</Text>
+            <Text style={styles.summarySub}>{userProducts.length} tổng bài</Text>
           </View>
         </View>
 
-        {/* 5. TABS & REVIEWS LIST */}
+        {/* 5. TABS & LISTS */}
         <View style={styles.tabsSection}>
           <View style={styles.tabBar}>
             <TouchableOpacity
@@ -298,7 +442,7 @@ export default function ProfileScreen({ navigation }: any) {
                   activeTab === 'reviews' && styles.tabItemTextActive,
                 ]}
               >
-                Đánh giá ({CURRENT_USER.totalReviews})
+                Đánh giá ({reviews.length})
               </Text>
             </TouchableOpacity>
 
@@ -312,7 +456,7 @@ export default function ProfileScreen({ navigation }: any) {
                   activeTab === 'history' && styles.tabItemTextActive,
                 ]}
               >
-                Lịch sử việc ({CURRENT_USER.completedTasksCount})
+                Lịch sử việc ({userTasks.length})
               </Text>
             </TouchableOpacity>
 
@@ -326,7 +470,7 @@ export default function ProfileScreen({ navigation }: any) {
                   activeTab === 'myItems' && styles.tabItemTextActive,
                 ]}
               >
-                Đồ pass ({CURRENT_USER.activeProductsCount})
+                Đồ pass ({userProducts.length})
               </Text>
             </TouchableOpacity>
           </View>
@@ -361,62 +505,211 @@ export default function ProfileScreen({ navigation }: any) {
             </ScrollView>
           )}
 
-          {/* List Content */}
+          {/* TAB 1: REVIEWS */}
           {activeTab === 'reviews' && (
-            <View style={styles.reviewsList}>
-              {filteredReviews.map((rev) => (
-                <ReviewItem key={rev.reviewId} review={rev} />
-              ))}
+            <View style={styles.tabContentList}>
+              {loadingReviews ? (
+                <ActivityIndicator size="small" color={colors.primary[600]} style={{ marginVertical: 24 }} />
+              ) : filteredReviews.length > 0 ? (
+                filteredReviews.map((rev) => (
+                  <ReviewItem key={rev.reviewId} review={rev} />
+                ))
+              ) : (
+                <View style={styles.emptyTabCard}>
+                  <Feather name="star" size={32} color={colors.neutral.disabled} />
+                  <Text style={styles.emptyTabTitle}>Chưa có đánh giá nào</Text>
+                  <Text style={styles.emptyTabSub}>
+                    Đánh giá từ bạn học sẽ hiển thị tại đây sau khi hoàn thành công việc hoặc giao dịch.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
+          {/* TAB 2: TASK HISTORY (requesterId == uid || workerId == uid) */}
           {activeTab === 'history' && (
-            <View style={styles.emptyTabCard}>
-              <Feather name="check-circle" size={36} color={colors.semantic.success.DEFAULT} />
-              <Text style={styles.emptyTabTitle}>Đã hoàn thành 14 công việc</Text>
-              <Text style={styles.emptyTabSub}>
-                Tất cả các việc nhận hộ đồ Shopee, in ấn tài liệu và mua đồ ăn đều được xác nhận hoàn thành đầy đủ.
-              </Text>
+            <View style={styles.tabContentList}>
+              {loadingTasks ? (
+                <ActivityIndicator size="small" color={colors.primary[600]} style={{ marginVertical: 24 }} />
+              ) : userTasks.length > 0 ? (
+                userTasks.map((task) => {
+                  const statusMeta = getTaskStatusMeta(task.status);
+                  const isRequester = task.requesterId === targetUid;
+                  const canRatePartner =
+                    isOwnProfile &&
+                    task.status === 'completed' &&
+                    !!(isRequester ? task.workerId : task.requesterId);
+
+                  return (
+                    <TouchableOpacity
+                      key={task.taskId}
+                      style={styles.historyCard}
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        navigation?.navigate('TaskDetail', { taskId: task.taskId, task })
+                      }
+                    >
+                      <View style={styles.historyTopRow}>
+                        <View style={styles.roleTag}>
+                          <Text style={styles.roleTagText}>
+                            {isRequester ? 'Việc đã đăng' : 'Việc đã nhận'}
+                          </Text>
+                        </View>
+                        <View style={[styles.statusPill, { backgroundColor: statusMeta.bg }]}>
+                          <Text style={[styles.statusPillText, { color: statusMeta.text }]}>
+                            {statusMeta.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.historyTitle} numberOfLines={2}>
+                        {task.title}
+                      </Text>
+
+                      <Text style={styles.historyAddress} numberOfLines={1}>
+                        {task.pickupLocation.address} ➔ {task.deliveryLocation.address}
+                      </Text>
+
+                      <View style={styles.historyBottomRow}>
+                        <Text style={styles.historyBounty}>{formatCurrency(task.bounty)}</Text>
+                        {canRatePartner ? (
+                          <TouchableOpacity
+                            style={styles.ratePartnerBtn}
+                            onPress={() => handleOpenReviewForTask(task)}
+                          >
+                            <Feather name="star" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                            <Text style={styles.ratePartnerBtnText}>Đánh giá đối tác</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text style={styles.viewDetailLink}>Xem chi tiết ›</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={styles.emptyTabCard}>
+                  <Feather name="inbox" size={36} color={colors.neutral.disabled} />
+                  <Text style={styles.emptyTabTitle}>Chưa có lịch sử việc vặt</Text>
+                  <Text style={styles.emptyTabSub}>
+                    Các công việc bạn đã đăng hoặc nhận thực hiện sẽ xuất hiện tại đây.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
+          {/* TAB 3: MY PRODUCTS (sellerId == uid) */}
           {activeTab === 'myItems' && (
-            <View style={styles.emptyTabCard}>
-              <Feather name="shopping-bag" size={36} color={colors.secondary[500]} />
-              <Text style={styles.emptyTabTitle}>3 món đồ đang rao bán</Text>
-              <Text style={styles.emptyTabSub}>
-                Bao gồm: Giáo trình Giải tích 1, Nồi cơm điện mini Lock&Lock và Bàn học gấp gọn KTX.
-              </Text>
+            <View style={styles.tabContentList}>
+              {loadingProducts ? (
+                <ActivityIndicator size="small" color={colors.secondary[500]} style={{ marginVertical: 24 }} />
+              ) : userProducts.length > 0 ? (
+                userProducts.map((product) => {
+                  const statusMeta = getProductStatusMeta(product.status);
+                  const coverUrl =
+                    product.imageUrls && product.imageUrls.length > 0
+                      ? product.imageUrls[0]
+                      : null;
+
+                  return (
+                    <TouchableOpacity
+                      key={product.productId}
+                      style={styles.productHistoryCard}
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        navigation?.navigate('ProductDetail', {
+                          productId: product.productId,
+                          product,
+                        })
+                      }
+                    >
+                      {coverUrl ? (
+                        <Image source={{ uri: coverUrl }} style={styles.productThumb} />
+                      ) : (
+                        <View style={styles.productThumbPlaceholder}>
+                          <Feather name="image" size={20} color={colors.neutral.disabled} />
+                        </View>
+                      )}
+
+                      <View style={styles.productHistoryInfo}>
+                        <View style={styles.historyTopRow}>
+                          <View style={[styles.statusPill, { backgroundColor: statusMeta.bg }]}>
+                            <Text style={[styles.statusPillText, { color: statusMeta.text }]}>
+                              {statusMeta.label}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.historyTitle} numberOfLines={1}>
+                          {product.title}
+                        </Text>
+
+                        <Text style={styles.productPrice}>
+                          {product.isFree ? 'Tặng miễn phí 0đ' : formatCurrency(product.price)}
+                        </Text>
+
+                        <Text style={styles.historyAddress} numberOfLines={1}>
+                          {product.location.address}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={styles.emptyTabCard}>
+                  <Feather name="shopping-bag" size={36} color={colors.neutral.disabled} />
+                  <Text style={styles.emptyTabTitle}>Chưa có món đồ nào đang pass</Text>
+                  <Text style={styles.emptyTabSub}>
+                    Các món đồ cũ bạn đăng bán hoặc cho tặng trên Chợ đồ cũ sẽ hiển thị tại đây.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
 
-        {/* 6. ACCOUNT SETTINGS MENU */}
-        <View style={styles.menuSection}>
-          <TouchableOpacity style={styles.menuItem}>
-            <View style={styles.menuIconWrap}>
-              <Feather name="lock" size={18} color={colors.primary[600]} />
-            </View>
-            <Text style={styles.menuItemText}>Đổi mật khẩu & Bảo mật</Text>
-            <Feather name="chevron-right" size={18} color={colors.neutral.textMuted} />
-          </TouchableOpacity>
+        {/* 6. ACCOUNT SETTINGS MENU (Only when viewing own profile) */}
+        {isOwnProfile && (
+          <View style={styles.menuSection}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() =>
+                Alert.alert('Đổi mật khẩu', 'Vui lòng sử dụng chức năng Quên mật khẩu ở màn hình Đăng nhập để đặt lại mật khẩu qua email.')
+              }
+            >
+              <View style={styles.menuIconWrap}>
+                <Feather name="lock" size={18} color={colors.primary[600]} />
+              </View>
+              <Text style={styles.menuItemText}>Đổi mật khẩu & Bảo mật</Text>
+              <Feather name="chevron-right" size={18} color={colors.neutral.textMuted} />
+            </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
-            <View style={styles.menuIconWrap}>
-              <Feather name="help-circle" size={18} color={colors.primary[600]} />
-            </View>
-            <Text style={styles.menuItemText}>Quy chuẩn uy tín & Hướng dẫn sinh viên</Text>
-            <Feather name="chevron-right" size={18} color={colors.neutral.textMuted} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() =>
+                Alert.alert(
+                  'Quy chuẩn uy tín',
+                  'Điểm Trust Score được tính từ trung bình cộng các đánh giá sau mỗi công việc hoặc giao dịch hoàn thành.'
+                )
+              }
+            >
+              <View style={styles.menuIconWrap}>
+                <Feather name="help-circle" size={18} color={colors.primary[600]} />
+              </View>
+              <Text style={styles.menuItemText}>Quy chuẩn uy tín & Hướng dẫn sinh viên</Text>
+              <Feather name="chevron-right" size={18} color={colors.neutral.textMuted} />
+            </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
-            <View style={[styles.menuIconWrap, { backgroundColor: '#FEE2E2' }]}>
-              <Feather name="log-out" size={18} color={colors.semantic.danger.DEFAULT} />
-            </View>
-            <Text style={styles.logoutText}>Đăng xuất tài khoản</Text>
-            <Feather name="chevron-right" size={18} color={colors.semantic.danger.DEFAULT} />
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity style={[styles.menuItem, styles.logoutItem]} onPress={onLogoutPress}>
+              <View style={[styles.menuIconWrap, { backgroundColor: '#FEE2E2' }]}>
+                <Feather name="log-out" size={18} color={colors.semantic.danger.DEFAULT} />
+              </View>
+              <Text style={styles.logoutText}>Đăng xuất tài khoản</Text>
+              <Feather name="chevron-right" size={18} color={colors.semantic.danger.DEFAULT} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -456,6 +749,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+    gap: spacing[2],
+  },
+  loginPromptBtn: {
+    marginTop: spacing[3],
+    backgroundColor: colors.primary[600],
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.lg,
+  },
+  loginPromptBtnText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.sm,
+  },
   scrollContent: {
     padding: spacing[4],
     gap: spacing[3],
@@ -479,6 +791,19 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
+  },
+  avatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.primary[600],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarFallbackText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
   },
   cameraBadge: {
     position: 'absolute',
@@ -564,7 +889,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing[3],
   },
+  trustHeaderTextCol: {
+    flex: 1,
+    marginRight: 8,
+  },
   trustTitle: {
+    flex: 1,
+    marginRight: 8,
     fontSize: 11,
     fontWeight: typography.fontWeight.bold,
     color: '#92400E',
@@ -574,19 +905,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.neutral.textMuted,
     marginTop: 1,
-  },
-  simulateReviewBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary[600],
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.md,
-  },
-  simulateReviewBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: typography.fontWeight.bold,
   },
   trustScoreMainRow: {
     flexDirection: 'row',
@@ -660,6 +978,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
     paddingVertical: 6,
+    paddingHorizontal: 4,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.neutral.border,
@@ -760,8 +1079,113 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: typography.fontWeight.bold,
   },
-  reviewsList: {
+  tabContentList: {
     marginTop: spacing[2],
+    gap: spacing[2],
+  },
+  historyCard: {
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    gap: 6,
+  },
+  historyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  roleTag: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  roleTagText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.neutral.textSecondary,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+  },
+  historyTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.neutral.textPrimary,
+  },
+  historyAddress: {
+    fontSize: 11,
+    color: colors.neutral.textMuted,
+  },
+  historyBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  historyBounty: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.semantic.success.dark,
+  },
+  viewDetailLink: {
+    fontSize: 11,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.primary[600],
+  },
+  ratePartnerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.md,
+  },
+  ratePartnerBtnText: {
+    fontSize: 11,
+    fontWeight: typography.fontWeight.bold,
+    color: '#FFFFFF',
+  },
+  productHistoryCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing[2],
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    gap: spacing[3],
+    alignItems: 'center',
+  },
+  productThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#E2E8F0',
+  },
+  productThumbPlaceholder: {
+    width: 68,
+    height: 68,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  productHistoryInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  productPrice: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    color: '#EA580C',
   },
   emptyTabCard: {
     alignItems: 'center',

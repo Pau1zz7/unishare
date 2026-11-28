@@ -23,7 +23,15 @@ export default function TaskDetailScreen({ route, navigation }: any) {
   const taskId: string | undefined = route?.params?.taskId || initialTask?.taskId;
 
   const user = useAuthStore((state) => state.user);
-  const { task, loading, accepting, error, acceptTask } = useTaskDetail(taskId, initialTask);
+  const {
+    task,
+    loading,
+    accepting,
+    updatingStatus,
+    error,
+    acceptTask,
+    updateStatus,
+  } = useTaskDetail(taskId, initialTask);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
@@ -120,6 +128,72 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     );
   };
 
+  const executeCompleteTask = async () => {
+    if (!task) return;
+    try {
+      await updateStatus('completed');
+      Alert.alert(
+        'Đã hoàn thành công việc! 🎉',
+        'Công việc đã được đánh dấu hoàn thành. Bạn có thể đánh giá đối tác ngay bây giờ.'
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Lỗi cập nhật',
+        err?.message || 'Không thể hoàn thành công việc. Vui lòng thử lại.'
+      );
+    }
+  };
+
+  const handleCompleteTask = () => {
+    if (!task) return;
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' &&
+        window.confirm(`Xác nhận công việc "${task.title}" đã được giao nhận hoàn tất?`);
+      if (confirmed) {
+        executeCompleteTask();
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Xác nhận hoàn thành',
+      `Xác nhận công việc "${task.title}" đã được giao nhận hoàn tất?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Hoàn thành',
+          onPress: executeCompleteTask,
+        },
+      ]
+    );
+  };
+
+  const handleOpenReview = () => {
+    if (!task || !user?.uid) return;
+
+    const isRequester = user.uid === task.requesterId;
+    const targetUserId = isRequester ? task.workerId : task.requesterId;
+    const targetUserName = isRequester
+      ? task.workerName || 'Người nhận việc'
+      : task.requesterName;
+    const targetUserAvatar = isRequester ? null : task.requesterAvatar ?? null;
+
+    if (!targetUserId) {
+      Alert.alert('Thông báo', 'Không tìm thấy thông tin đối tác để đánh giá.');
+      return;
+    }
+
+    navigation?.navigate('ReviewRating', {
+      targetUserId,
+      targetUserName,
+      targetUserAvatar,
+      relatedType: 'task',
+      relatedId: task.taskId,
+      relatedTitle: task.title,
+    });
+  };
+
   if (loading && !task) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -168,6 +242,12 @@ export default function TaskDetailScreen({ route, navigation }: any) {
   const isOpen = task.status === 'open';
   const isOwnTask = !!user?.uid && task.requesterId === user.uid;
   const isMyAcceptedTask = !!user?.uid && task.workerId === user.uid;
+  const isParticipant = isOwnTask || isMyAcceptedTask;
+  const canComplete = task.status === 'matched' && isParticipant;
+  const canReview =
+    task.status === 'completed' &&
+    isParticipant &&
+    !!(isOwnTask ? task.workerId : task.requesterId);
 
   const statusMeta = (() => {
     switch (task.status) {
@@ -202,18 +282,86 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     }
   })();
 
-  const actionLabel = (() => {
-    if (accepting) return 'Đang xử lý...';
-    if (isOwnTask) return 'Bài đăng của bạn';
-    if (task.status === 'matched') {
-      return isMyAcceptedTask ? 'Bạn đã nhận việc này' : 'Đã có người nhận việc';
+  const primaryAction = (() => {
+    if (canReview) {
+      return {
+        label: 'Đánh giá đối tác',
+        icon: 'star' as const,
+        onPress: handleOpenReview,
+        disabled: false,
+        style: styles.reviewActionBtn,
+        loading: false,
+      };
     }
-    if (task.status === 'completed') return 'Công việc đã hoàn thành';
-    if (!isOpen) return 'Công việc không còn mở';
-    return 'Nhận việc này ngay';
+    if (canComplete) {
+      return {
+        label: updatingStatus ? 'Đang cập nhật...' : 'Xác nhận hoàn thành',
+        icon: 'check-circle' as const,
+        onPress: handleCompleteTask,
+        disabled: updatingStatus,
+        style: styles.completeActionBtn,
+        loading: updatingStatus,
+      };
+    }
+    if (accepting) {
+      return {
+        label: 'Đang xử lý...',
+        icon: 'zap' as const,
+        onPress: handleAcceptTask,
+        disabled: true,
+        style: styles.acceptedBtnDisabled,
+        loading: true,
+      };
+    }
+    if (isOwnTask && isOpen) {
+      return {
+        label: 'Bài đăng của bạn',
+        icon: 'check-circle' as const,
+        onPress: handleAcceptTask,
+        disabled: true,
+        style: styles.acceptedBtnDisabled,
+        loading: false,
+      };
+    }
+    if (task.status === 'matched') {
+      return {
+        label: isMyAcceptedTask ? 'Bạn đã nhận việc này' : 'Đã có người nhận việc',
+        icon: 'check-circle' as const,
+        onPress: handleAcceptTask,
+        disabled: true,
+        style: styles.acceptedBtnDisabled,
+        loading: false,
+      };
+    }
+    if (task.status === 'completed') {
+      return {
+        label: 'Công việc đã hoàn thành',
+        icon: 'check-circle' as const,
+        onPress: handleAcceptTask,
+        disabled: true,
+        style: styles.acceptedBtnDisabled,
+        loading: false,
+      };
+    }
+    if (!isOpen) {
+      return {
+        label: 'Công việc không còn mở',
+        icon: 'check-circle' as const,
+        onPress: handleAcceptTask,
+        disabled: true,
+        style: styles.acceptedBtnDisabled,
+        loading: false,
+      };
+    }
+    return {
+      label: 'Nhận việc này ngay',
+      icon: 'zap' as const,
+      onPress: handleAcceptTask,
+      disabled: false,
+      style: undefined,
+      loading: false,
+    };
   })();
-
-  const isActionDisabled = !isOpen || isOwnTask || accepting;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -328,15 +476,15 @@ export default function TaskDetailScreen({ route, navigation }: any) {
             <TouchableOpacity
               style={styles.directChatBtn}
               onPress={() =>
-                Alert.alert('Thông báo', `Tính năng nhắn tin trực tiếp với ${task.requesterName} đang được kết nối.`)
+                navigation?.navigate('Profile', { userId: task.requesterId })
               }
             >
-              <Feather name="message-circle" size={18} color={colors.primary[600]} />
-              <Text style={styles.directChatText}>Chat</Text>
+              <Feather name="user" size={16} color={colors.primary[600]} />
+              <Text style={styles.directChatText}>Hồ sơ</Text>
             </TouchableOpacity>
           </View>
 
-          {task.status === 'matched' && task.workerName ? (
+          {(task.status === 'matched' || task.status === 'completed') && task.workerName ? (
             <View style={styles.workerInfoBox}>
               <Feather name="user-check" size={15} color={colors.semantic.warning.text} />
               <Text style={styles.workerInfoText}>
@@ -453,25 +601,22 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[
-            styles.primaryActionBtn,
-            isActionDisabled && styles.acceptedBtnDisabled,
-          ]}
-          onPress={handleAcceptTask}
-          disabled={isActionDisabled}
+          style={[styles.primaryActionBtn, primaryAction.style]}
+          onPress={primaryAction.onPress}
+          disabled={primaryAction.disabled}
           activeOpacity={0.85}
         >
-          {accepting ? (
+          {primaryAction.loading ? (
             <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
           ) : (
             <Feather
-              name={!isOpen || isOwnTask ? 'check-circle' : 'zap'}
+              name={primaryAction.icon}
               size={20}
               color="#FFFFFF"
               style={{ marginRight: 6 }}
             />
           )}
-          <Text style={styles.primaryActionBtnText}>{actionLabel}</Text>
+          <Text style={styles.primaryActionBtnText}>{primaryAction.label}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -930,6 +1075,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: borderRadius.xl,
     backgroundColor: colors.primary[600],
+  },
+  completeActionBtn: {
+    backgroundColor: colors.semantic.success.DEFAULT,
+  },
+  reviewActionBtn: {
+    backgroundColor: '#F59E0B',
   },
   acceptedBtnDisabled: {
     backgroundColor: colors.neutral.disabled,

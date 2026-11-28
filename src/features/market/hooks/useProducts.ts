@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   subscribeAvailableProducts,
   subscribeProductById,
+  subscribeUserProducts,
 } from '../services/productService';
 import { Product } from '../../../types';
 
@@ -41,6 +42,43 @@ export const useProducts = () => {
   }, []);
 
   return { products, loading, refreshing, error, refresh };
+};
+
+/**
+ * Hook lắng nghe realtime danh sách đồ pass của một user (sellerId == uid).
+ */
+export const useUserProducts = (sellerId?: string) => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(!!sellerId);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sellerId) {
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const unsubscribe = subscribeUserProducts(
+      sellerId,
+      (data) => {
+        setProducts(data);
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message || 'Không thể tải danh sách đồ pass.');
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [sellerId]);
+
+  return { products, loading, error };
 };
 
 /**

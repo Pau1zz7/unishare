@@ -13,6 +13,14 @@ import { CreateProductInput, Product, User } from '../../../types';
 
 const PRODUCTS_COLLECTION = 'products';
 
+const mapProductDoc = (
+  id: string,
+  rawData: Omit<Product, 'productId'> & { productId?: string }
+): Product => ({
+  ...rawData,
+  productId: rawData.productId || id,
+});
+
 /**
  * Lắng nghe realtime danh sách đồ cũ đang bán/tặng (status == 'available').
  * Sắp xếp giảm dần theo createdAt ở client để tránh phụ thuộc composite index.
@@ -29,13 +37,46 @@ export const subscribeAvailableProducts = (
   return onSnapshot(
     q,
     (snapshot) => {
-      const products: Product[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as Omit<Product, 'productId'> & { productId?: string };
-        return {
-          ...data,
-          productId: data.productId || docSnap.id,
-        };
-      });
+      const products: Product[] = snapshot.docs.map((docSnap) =>
+        mapProductDoc(
+          docSnap.id,
+          docSnap.data() as Omit<Product, 'productId'> & { productId?: string }
+        )
+      );
+
+      products.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      onData(products);
+    },
+    (error) => {
+      if (onError) {
+        onError(error);
+      }
+    }
+  );
+};
+
+/**
+ * Lắng nghe realtime danh sách đồ pass của một người bán (sellerId == uid).
+ */
+export const subscribeUserProducts = (
+  sellerId: string,
+  onData: (products: Product[]) => void,
+  onError?: (error: Error) => void
+): (() => void) => {
+  const q = query(
+    collection(db, PRODUCTS_COLLECTION),
+    where('sellerId', '==', sellerId)
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const products: Product[] = snapshot.docs.map((docSnap) =>
+        mapProductDoc(
+          docSnap.id,
+          docSnap.data() as Omit<Product, 'productId'> & { productId?: string }
+        )
+      );
 
       products.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
       onData(products);
@@ -65,11 +106,12 @@ export const subscribeProductById = (
         onData(null);
         return;
       }
-      const data = docSnap.data() as Omit<Product, 'productId'> & { productId?: string };
-      onData({
-        ...data,
-        productId: data.productId || docSnap.id,
-      });
+      onData(
+        mapProductDoc(
+          docSnap.id,
+          docSnap.data() as Omit<Product, 'productId'> & { productId?: string }
+        )
+      );
     },
     (error) => {
       if (onError) {

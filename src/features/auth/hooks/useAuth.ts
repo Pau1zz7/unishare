@@ -75,6 +75,7 @@ export const useAuth = () => {
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,
+    handleLogout,
     forgotPassword: handleForgotPassword,
   };
 };

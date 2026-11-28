@@ -5,6 +5,7 @@ import {
   query,
   runTransaction,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../../../lib/firebase/config';
@@ -13,9 +14,17 @@ import {
   calculateDistanceKm,
   enrichLocationWithGeohash,
 } from '../../../lib/location/locationService';
-import { CreateTaskInput, Task, User } from '../../../types';
+import { CreateTaskInput, Task, TaskStatus, User } from '../../../types';
 
 const TASKS_COLLECTION = 'tasks';
+
+const mapTaskDoc = (
+  id: string,
+  rawData: Omit<Task, 'taskId'> & { taskId?: string }
+): Task => ({
+  ...rawData,
+  taskId: rawData.taskId || id,
+});
 
 /**
  * Lắng nghe realtime danh sách việc vặt đang mở (status == 'open').
@@ -30,13 +39,9 @@ export const subscribeOpenTasks = (
   return onSnapshot(
     q,
     (snapshot) => {
-      const tasks: Task[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string };
-        return {
-          ...data,
-          taskId: data.taskId || docSnap.id,
-        };
-      });
+      const tasks: Task[] = snapshot.docs.map((docSnap) =>
+        mapTaskDoc(docSnap.id, docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string })
+      );
 
       tasks.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
       onData(tasks);
@@ -47,6 +52,72 @@ export const subscribeOpenTasks = (
       }
     }
   );
+};
+
+/**
+ * Lắng nghe realtime lịch sử việc vặt của user (requesterId == uid hoặc workerId == uid).
+ */
+export const subscribeUserTasks = (
+  uid: string,
+  onData: (tasks: Task[]) => void,
+  onError?: (error: Error) => void
+): (() => void) => {
+  const requesterQuery = query(
+    collection(db, TASKS_COLLECTION),
+    where('requesterId', '==', uid)
+  );
+  const workerQuery = query(
+    collection(db, TASKS_COLLECTION),
+    where('workerId', '==', uid)
+  );
+
+  let requesterTasks: Task[] = [];
+  let workerTasks: Task[] = [];
+
+  const emitMerged = () => {
+    const mergedMap = new Map<string, Task>();
+    for (const item of requesterTasks) {
+      mergedMap.set(item.taskId, item);
+    }
+    for (const item of workerTasks) {
+      mergedMap.set(item.taskId, item);
+    }
+    const merged = Array.from(mergedMap.values()).sort(
+      (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)
+    );
+    onData(merged);
+  };
+
+  const unsubRequester = onSnapshot(
+    requesterQuery,
+    (snapshot) => {
+      requesterTasks = snapshot.docs.map((docSnap) =>
+        mapTaskDoc(docSnap.id, docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string })
+      );
+      emitMerged();
+    },
+    (error) => {
+      if (onError) onError(error);
+    }
+  );
+
+  const unsubWorker = onSnapshot(
+    workerQuery,
+    (snapshot) => {
+      workerTasks = snapshot.docs.map((docSnap) =>
+        mapTaskDoc(docSnap.id, docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string })
+      );
+      emitMerged();
+    },
+    (error) => {
+      if (onError) onError(error);
+    }
+  );
+
+  return () => {
+    unsubRequester();
+    unsubWorker();
+  };
 };
 
 /**
@@ -66,11 +137,9 @@ export const subscribeTaskById = (
         onData(null);
         return;
       }
-      const data = docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string };
-      onData({
-        ...data,
-        taskId: data.taskId || docSnap.id,
-      });
+      onData(
+        mapTaskDoc(docSnap.id, docSnap.data() as Omit<Task, 'taskId'> & { taskId?: string })
+      );
     },
     (error) => {
       if (onError) {
@@ -173,5 +242,19 @@ export const acceptTask = async (
       workerName,
       updatedAt: Date.now(),
     });
+  });
+};
+
+/**
+ * Cập nhật trạng thái việc vặt (VD: 'completed' hoặc 'cancelled').
+ */
+export const updateTaskStatus = async (
+  taskId: string,
+  status: TaskStatus
+): Promise<void> => {
+  const taskRef = doc(db, TASKS_COLLECTION, taskId);
+  await updateDoc(taskRef, {
+    status,
+    updatedAt: Date.now(),
   });
 };
