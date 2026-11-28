@@ -10,9 +10,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useAuthStore } from '../store/useAuthStore';
+import { useUserProfile } from '../features/reviews/hooks/useReviews';
+import { submitReview } from '../features/reviews/services/reviewService';
 import { colors, typography, spacing, borderRadius, shadows } from '../theme/tokens';
 
 const QUICK_TAGS = [
@@ -33,12 +37,27 @@ const RATING_LABELS: { [key: number]: { text: string; color: string } } = {
 };
 
 export default function ReviewRatingScreen({ route, navigation }: any) {
-  const partnerName = route?.params?.targetUserName || 'Nguyễn Văn An';
-  const partnerAvatar = route?.params?.targetUserAvatar || null;
-  const relatedTitle = route?.params?.relatedTitle || 'Nhận hộ kiện hàng Shopee tại Cổng 1 KTX Khu B';
+  const reviewer = useAuthStore((state) => state.user);
+
+  const targetUserId: string | undefined = route?.params?.targetUserId;
+  const paramTargetName: string | undefined = route?.params?.targetUserName;
+  const paramTargetAvatar: string | null = route?.params?.targetUserAvatar ?? null;
+  const relatedType: 'task' | 'product' | 'tutor' = route?.params?.relatedType || 'task';
+  const relatedId: string | undefined = route?.params?.relatedId;
+  const relatedTitle: string = route?.params?.relatedTitle || 'Giao dịch trên UniShare';
+
+  const { profile: targetProfile } = useUserProfile(targetUserId);
+
+  const partnerName =
+    targetProfile?.displayName || paramTargetName || 'Thành viên UniShare';
+  const partnerAvatar = targetProfile?.avatarUrl ?? paramTargetAvatar;
+  const partnerCampus = targetProfile?.university || 'Thành viên UniShare';
 
   const [rating, setRating] = useState<number>(5);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['⏱️ Đúng giờ', '😊 Thân thiện & Lịch sự']);
+  const [selectedTags, setSelectedTags] = useState<string[]>([
+    '⏱️ Đúng giờ',
+    '😊 Thân thiện & Lịch sự',
+  ]);
   const [comment, setComment] = useState('');
   const [isPublicIdentity, setIsPublicIdentity] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -49,18 +68,52 @@ export default function ReviewRatingScreen({ route, navigation }: any) {
     );
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
+    if (!reviewer?.uid) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản sinh viên để gửi đánh giá.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+        ]
+      );
+      return;
+    }
+
+    if (!targetUserId || !relatedId) {
+      Alert.alert(
+        'Thiếu thông tin giao dịch',
+        'Không xác định được đối tác hoặc công việc cần đánh giá.'
+      );
+      return;
+    }
+
     if (rating === 0) {
       Alert.alert('Chưa chọn sao', 'Vui lòng chọn mức độ hài lòng từ 1 đến 5 sao.');
       return;
     }
 
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
+    try {
+      await submitReview(
+        {
+          targetUserId,
+          targetUserName: partnerName,
+          rating,
+          comment,
+          tags: selectedTags,
+          relatedType,
+          relatedTitle,
+          relatedId,
+        },
+        reviewer,
+        isPublicIdentity
+      );
+
       Alert.alert(
         'Đánh giá thành công! 🌟',
-        `Cảm ơn bạn! Đánh giá ${rating} sao đã được cộng vào điểm uy tín (Trust Score) của bạn ${partnerName}.`,
+        `Cảm ơn bạn! Đánh giá ${rating} sao đã được lưu và cập nhật vào điểm uy tín (Trust Score) của ${partnerName}.`,
         [
           {
             text: 'Xong',
@@ -68,8 +121,46 @@ export default function ReviewRatingScreen({ route, navigation }: any) {
           },
         ]
       );
-    }, 600);
+    } catch (err: any) {
+      Alert.alert(
+        'Không thể gửi đánh giá',
+        err?.message || 'Đã có lỗi xảy ra khi lưu đánh giá. Vui lòng thử lại.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (!targetUserId || !relatedId) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={() => navigation?.goBack()}
+            activeOpacity={0.7}
+          >
+            <Feather name="x" size={24} color={colors.neutral.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Đánh giá giao dịch</Text>
+          <View style={{ width: 32 }} />
+        </View>
+        <View style={styles.invalidState}>
+          <Feather name="alert-circle" size={48} color={colors.neutral.disabled} />
+          <Text style={styles.invalidTitle}>Chưa có giao dịch để đánh giá</Text>
+          <Text style={styles.invalidSub}>
+            Vui lòng mở đánh giá từ một công việc đã hoàn thành (status: completed).
+          </Text>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation?.goBack()}
+          >
+            <Text style={styles.backBtnText}>Quay lại</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -109,11 +200,16 @@ export default function ReviewRatingScreen({ route, navigation }: any) {
             </View>
 
             <Text style={styles.partnerName}>{partnerName}</Text>
-            <Text style={styles.partnerCampus}>KTX Khu B • ĐHQG TP.HCM</Text>
+            <Text style={styles.partnerCampus}>{partnerCampus}</Text>
 
             {/* Related task tag */}
             <View style={styles.transactionTag}>
-              <Feather name="package" size={13} color={colors.primary[600]} style={{ marginRight: 4 }} />
+              <Feather
+                name={relatedType === 'product' ? 'shopping-bag' : 'package'}
+                size={13}
+                color={colors.primary[600]}
+                style={{ marginRight: 4 }}
+              />
               <Text style={styles.transactionTitle} numberOfLines={1}>
                 {relatedTitle}
               </Text>
@@ -238,12 +334,16 @@ export default function ReviewRatingScreen({ route, navigation }: any) {
       {/* 7. FIXED BOTTOM SUBMIT BUTTON */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.submitBtn}
+          style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
           onPress={handleSubmitReview}
           disabled={submitting}
           activeOpacity={0.85}
         >
-          <Feather name="send" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Feather name="send" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+          )}
           <Text style={styles.submitBtnText}>
             {submitting ? 'Đang gửi đánh giá...' : 'Gửi đánh giá uy tín'}
           </Text>
@@ -275,6 +375,36 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold,
     color: colors.neutral.textPrimary,
+  },
+  invalidState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+    gap: spacing[3],
+  },
+  invalidTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.neutral.textPrimary,
+  },
+  invalidSub: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  backBtn: {
+    marginTop: spacing[2],
+    backgroundColor: colors.primary[600],
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.lg,
+  },
+  backBtnText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.sm,
   },
   scrollContent: {
     padding: spacing[4],
@@ -509,6 +639,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
     paddingVertical: 14,
     borderRadius: borderRadius.xl,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
   },
   submitBtnText: {
     fontSize: typography.fontSize.sm,

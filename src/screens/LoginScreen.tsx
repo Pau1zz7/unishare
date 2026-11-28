@@ -12,7 +12,7 @@ export default function LoginScreen({ navigation }: any) {
   const handleLogin = async () => {
     const result = await login(email, password);
     if (result.success) {
-      navigation.replace('MainTab');
+      navigation.navigate('HomeFeed');
     } else {
       Alert.alert("Lỗi đăng nhập", result.error);
     }
@@ -32,7 +32,7 @@ export default function LoginScreen({ navigation }: any) {
 
           <View style={styles.inputContainer}>
             <Feather name="mail" size={20} color="#9CA3AF" />
-            <TextInput
+            <TextInput 
               style={styles.input}
               placeholder="Email sinh viên (.edu.vn)"
               value={email}
@@ -41,10 +41,10 @@ export default function LoginScreen({ navigation }: any) {
               keyboardType="email-address"
             />
           </View>
-
+          
           <View style={styles.inputContainer}>
             <Feather name="lock" size={20} color="#9CA3AF" />
-            <TextInput
+            <TextInput 
               style={styles.input}
               placeholder="Mật khẩu"
               secureTextEntry

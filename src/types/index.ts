@@ -160,35 +160,6 @@ export interface CreateReviewInput {
   relatedId: string;
 }
 
-export interface Coordinates {
-  latitude: number;
-  longitude: number;
-}
 
-export interface ConversationParticipantInfo {
-  displayName: string;
-  avatarUrl: string | null;
-}
-
-export interface Conversation {
-  conversationId: string;
-  participantIds: string[];
-  participants: Record<string, ConversationParticipantInfo>;
-  lastMessage: string;
-  lastMessageAt: number;
-  lastSenderId?: string;
-  relatedType?: 'task' | 'product';
-  relatedId?: string;
-  relatedTitle?: string;
-  createdAt: number;
-}
-
-export interface Message {
-  messageId: string;
-  senderId: string;
-  text: string;
-  createdAt: number;
-  isRead?: boolean;
-}
 
 

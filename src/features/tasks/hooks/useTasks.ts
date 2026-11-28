@@ -3,8 +3,10 @@ import {
   acceptTask as acceptTaskService,
   subscribeOpenTasks,
   subscribeTaskById,
+  subscribeUserTasks,
+  updateTaskStatus as updateTaskStatusService,
 } from '../services/taskService';
-import { Task } from '../../../types';
+import { Task, TaskStatus } from '../../../types';
 
 /**
  * Hook lắng nghe realtime danh sách việc vặt đang mở (status == 'open') từ Firestore.
@@ -45,12 +47,50 @@ export const useTasks = () => {
 };
 
 /**
- * Hook lắng nghe realtime chi tiết 1 việc vặt và cung cấp action nhận việc qua Transaction.
+ * Hook lắng nghe realtime lịch sử việc vặt của một user (đã đăng hoặc đã nhận).
+ */
+export const useUserTasks = (uid?: string) => {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(!!uid);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!uid) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const unsubscribe = subscribeUserTasks(
+      uid,
+      (data) => {
+        setTasks(data);
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message || 'Không thể tải lịch sử công việc.');
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [uid]);
+
+  return { tasks, loading, error };
+};
+
+/**
+ * Hook lắng nghe realtime chi tiết 1 việc vặt và cung cấp action nhận việc / cập nhật trạng thái.
  */
 export const useTaskDetail = (taskId?: string, initialTask?: Task | null) => {
   const [task, setTask] = useState<Task | null>(initialTask ?? null);
   const [loading, setLoading] = useState(!initialTask && !!taskId);
   const [accepting, setAccepting] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,5 +132,20 @@ export const useTaskDetail = (taskId?: string, initialTask?: Task | null) => {
     [task?.taskId]
   );
 
-  return { task, loading, accepting, error, acceptTask };
+  const updateStatus = useCallback(
+    async (status: TaskStatus) => {
+      if (!task?.taskId) {
+        throw new Error('Không tìm thấy mã công việc.');
+      }
+      setUpdatingStatus(true);
+      try {
+        await updateTaskStatusService(task.taskId, status);
+      } finally {
+        setUpdatingStatus(false);
+      }
+    },
+    [task?.taskId]
+  );
+
+  return { task, loading, accepting, updatingStatus, error, acceptTask, updateStatus };
 };
